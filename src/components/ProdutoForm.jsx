@@ -3,8 +3,8 @@ import Select from "react-select";
 
 export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
   const [codigo, setCodigo] = useState("");
-  const [produto, setProduto] = useState(null); // react-select
-  const [local, setLocal] = useState(null); // react-select
+  const [produto, setProduto] = useState(null); // react-select produto
+  const [local, setLocal] = useState(null);     // react-select local
   const [quantidade, setQuantidade] = useState(0);
 
   const handleSubmit = (e) => {
@@ -41,7 +41,10 @@ export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
   }));
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 p-4 border rounded bg-white shadow">
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-3 p-4 border rounded bg-white shadow"
+    >
       <h2 className="text-lg font-semibold">Cadastrar Produto</h2>
 
       {/* Código */}
