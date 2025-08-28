@@ -1,0 +1,758 @@
+[
+  {
+    "bem": 918,
+    "identificacao": "MOTOR ELETRICO PLANTADEIRA 48L"
+  },
+  {
+    "bem": 917,
+    "identificacao": "MOTOR ELETRICO PLANTADEIRA 48L"
+  },
+  {
+    "bem": 916,
+    "identificacao": "MOTOR ELETRICO PLANTADEIRA 34L"
+  },
+  {
+    "bem": 915,
+    "identificacao": "MOTOR ELETRICO PLANTADEIRA 34L"
+  },
+  {
+    "bem": 914,
+    "identificacao": "KIT ISO 6 MOTOR ELETRICO PLANTADEIRA 48L"
+  },
+  {
+    "bem": 913,
+    "identificacao": "KIT ISO 6 IRC MOTOR ELETRICO PLANTADEIRA 34L"
+  },
+  {
+    "bem": 912,
+    "identificacao": "TANQUE INOX 1000L 2024  CAMINHAO VW 17210"
+  },
+  {
+    "bem": 894,
+    "identificacao": "CARRETA COMBATE INCENDIO 18500L"
+  },
+  {
+    "bem": 886,
+    "identificacao": "NEW HOLLAND"
+  },
+  {
+    "bem": 882,
+    "identificacao": "CORTADOR DE GRAMA TS148 HUSQVARNA"
+  },
+  {
+    "bem": 880,
+    "identificacao": "PULVERIZADOR COSTAL JACTO XP 20L"
+  },
+  {
+    "bem": 877,
+    "identificacao": "KIT CONVERSAO DIGITAL PARA MODERNIZACAO DE BALANCAS MECANICA"
+  },
+  {
+    "bem": 860,
+    "identificacao": "CANHAO MONITOR 2 1 2 COM FLANGE"
+  },
+  {
+    "bem": 856,
+    "identificacao": "SWATH MASTER AIR TRACTOR"
+  },
+  {
+    "bem": 840,
+    "identificacao": "BOMBA ALIMENTADORA COMBUSTIVEL 20028540401"
+  },
+  {
+    "bem": 836,
+    "identificacao": "EQUIPAMENTO ANTIPOLUIDOR A BASE DE OZONIO AER 1050L 220V"
+  },
+  {
+    "bem": 835,
+    "identificacao": "MOTOBOMBA BD705E 3'' (BRANCO)"
+  },
+  {
+    "bem": 834,
+    "identificacao": "MOTOBOMBA BD705E 3'' P E (BRANCO) XS"
+  },
+  {
+    "bem": 831,
+    "identificacao": "SERVIDOR DELL R730 2X PROC DECA CORE 256GB"
+  },
+  {
+    "bem": 830,
+    "identificacao": "PLATAFORMA ELEVATORIA VEICULAR ELETRO HIDRAULICA"
+  },
+  {
+    "bem": 816,
+    "identificacao": "COLHEITADEIRA S780"
+  },
+  {
+    "bem": 810,
+    "identificacao": "PULVERIZADOR UNIPORT 4530"
+  },
+  {
+    "bem": 807,
+    "identificacao": "SEMEADEIRA ADUBADEIRA"
+  },
+  {
+    "bem": 804,
+    "identificacao": "BOMBEADOR LEAO 4R8PB 19 ESTAGIOS"
+  },
+  {
+    "bem": 802,
+    "identificacao": "ORION TANQUE DE INOCULANTE L COM ISOBUS"
+  },
+  {
+    "bem": 801,
+    "identificacao": "PLANTADEIRA DB-74 49 LINHAS"
+  },
+  {
+    "bem": 791,
+    "identificacao": "PRE MIX MASTER 650 WK 12000"
+  },
+  {
+    "bem": 790,
+    "identificacao": "PRE MIX MASTER 650 WK 12000"
+  },
+  {
+    "bem": 785,
+    "identificacao": "TRATOR 9R 640HP"
+  },
+  {
+    "bem": 781,
+    "identificacao": "ORION HUNTER H2200"
+  },
+  {
+    "bem": 780,
+    "identificacao": "PA CARREGADEIRA 544K-II"
+  },
+  {
+    "bem": 776,
+    "identificacao": "DISTRIBUIDOR M4040DN"
+  },
+  {
+    "bem": 771,
+    "identificacao": "BOMBA CENTRIFUGA COMBATE INCENDIO BPI 22"
+  },
+  {
+    "bem": 767,
+    "identificacao": "ATOMIZADOR AJ 401 LH"
+  },
+  {
+    "bem": 763,
+    "identificacao": "KIT GERADOR SOLAR 318 KWP GROWATT"
+  },
+  {
+    "bem": 754,
+    "identificacao": "TRATOR 9R 540HP"
+  },
+  {
+    "bem": 742,
+    "identificacao": "PLANTADEIRA ESTRELA 24 LINHAS"
+  },
+  {
+    "bem": 735,
+    "identificacao": "NIVELADOR TANDEM 2000"
+  },
+  {
+    "bem": 732,
+    "identificacao": "COMPRESSOR EMERSON"
+  },
+  {
+    "bem": 725,
+    "identificacao": "EQUIPAMENTO ORION HUNTER H2200"
+  },
+  {
+    "bem": 724,
+    "identificacao": "EQUIPAMENTO ORION HUNTER H900"
+  },
+  {
+    "bem": 721,
+    "identificacao": "MEDIDOR DE UMIDADE G2000"
+  },
+  {
+    "bem": 720,
+    "identificacao": "ROLO FACA"
+  },
+  {
+    "bem": 719,
+    "identificacao": "BOBCAT S450 - MINICARREGADEIRA"
+  },
+  {
+    "bem": 718,
+    "identificacao": "4K HD PALLET FORK"
+  },
+  {
+    "bem": 717,
+    "identificacao": "CACAMBA COM GARRA INDUSTRIAL"
+  },
+  {
+    "bem": 716,
+    "identificacao": "HERCULES 6.0"
+  },
+  {
+    "bem": 713,
+    "identificacao": "DISTRIBUIDOR DE CORRETIVOS E SEMENTES BRUTTUS 12000"
+  },
+  {
+    "bem": 711,
+    "identificacao": "PLANTADEIRA DB-74 49 LINHAS"
+  },
+  {
+    "bem": 709,
+    "identificacao": "TRATOR 8345R"
+  },
+  {
+    "bem": 704,
+    "identificacao": "COLHEITADEIRA S780"
+  },
+  {
+    "bem": 703,
+    "identificacao": "COLHEITADEIRA S780"
+  },
+  {
+    "bem": 702,
+    "identificacao": "COLHEITADEIRA S780"
+  },
+  {
+    "bem": 701,
+    "identificacao": "KIT SOPRADOR + 2BAT 5AH+CAREGADOR"
+  },
+  {
+    "bem": 700,
+    "identificacao": "KIT SOPRADOR + 2BAT 5AH+CAREGADOR"
+  },
+  {
+    "bem": 699,
+    "identificacao": "KIT SOPRADOR + 2BAT 5AH+CAREGADOR"
+  },
+  {
+    "bem": 698,
+    "identificacao": "KIT SOPRADOR E PF TORQUE"
+  },
+  {
+    "bem": 697,
+    "identificacao": "KIT SOPRADOR E PF TORQUE"
+  },
+  {
+    "bem": 696,
+    "identificacao": "KIT SOPRADOR E PF TORQUE"
+  },
+  {
+    "bem": 695,
+    "identificacao": "KIT SOPRADOR E PF TORQUE"
+  },
+  {
+    "bem": 694,
+    "identificacao": "KIT SOPRADOR E PF TORQUE"
+  },
+  {
+    "bem": 693,
+    "identificacao": "KIT SOPRADOR E PF TORQUE"
+  },
+  {
+    "bem": 692,
+    "identificacao": "ROLO FACA KATRINA F5 9000"
+  },
+  {
+    "bem": 668,
+    "identificacao": "CARRETA TRANSP PLATAFORMA 40 PES"
+  },
+  {
+    "bem": 667,
+    "identificacao": "CARRETA TRANSP PLATAFORMA 45 PES"
+  },
+  {
+    "bem": 666,
+    "identificacao": "QUADRO PALETEIRO COM GARFO 107M MAX936W"
+  },
+  {
+    "bem": 665,
+    "identificacao": "PEGADOR DE BIG BAG MAX936"
+  },
+  {
+    "bem": 661,
+    "identificacao": "DEPENADORA DE FRANGOS CAP 12KG"
+  },
+  {
+    "bem": 660,
+    "identificacao": "GUINCHO PEGADOR DE BIG BAG MAX936W"
+  },
+  {
+    "bem": 651,
+    "identificacao": "ROLO COMPACTADOR DE SOLOS CA25 DYNAPAC"
+  },
+  {
+    "bem": 649,
+    "identificacao": "MOTOBOMBA FAMAC FN-BL 10-164R"
+  },
+  {
+    "bem": 648,
+    "identificacao": "BOMBA ABASTECIMENTO 12V 57 LTS/MIN"
+  },
+  {
+    "bem": 644,
+    "identificacao": "MODULO DE ABASTECIMENTO AEREO - TANQUE"
+  },
+  {
+    "bem": 643,
+    "identificacao": "EQUIPAMENTO ORION HUNTER H1600"
+  },
+  {
+    "bem": 642,
+    "identificacao": "EQUIPAMENTO ORION HUNTER H1600"
+  },
+  {
+    "bem": 641,
+    "identificacao": "EQUIPAMENTO ORION HUNTER H2200"
+  },
+  {
+    "bem": 640,
+    "identificacao": "EQUIPAMENTO ORION HUNTER H2200"
+  },
+  {
+    "bem": 635,
+    "identificacao": "PULVERIZADOR UNIPORT 4530"
+  },
+  {
+    "bem": 581,
+    "identificacao": "GRUPO GERADOR 500 KVA MAQUIGERAL SCANIA - SEDE"
+  },
+  {
+    "bem": 565,
+    "identificacao": "ROCADEIRA STHIL FS290 DM 305MM"
+  },
+  {
+    "bem": 563,
+    "identificacao": "ENGENHO PARA CANA M-730 ROL FERRO SEM MOTOR"
+  },
+  {
+    "bem": 545,
+    "identificacao": "LAVADORA LJ3000"
+  },
+  {
+    "bem": 539,
+    "identificacao": "TMS 1000 - TRATADOR MISTURADOR DE SEMENTES"
+  },
+  {
+    "bem": 537,
+    "identificacao": "CARRETA TANQUE AGRICOLA FTC 4300 CEMAG"
+  },
+  {
+    "bem": 536,
+    "identificacao": "CARRETA TANQUE AGUA 30.000L"
+  },
+  {
+    "bem": 529,
+    "identificacao": "MESA DENSIMETRICA MOD CB-OL-150"
+  },
+  {
+    "bem": 527,
+    "identificacao": "DISTRIBUIDOR DE CORRETIVOS E SEMENTES BRUTTUS 12.000"
+  },
+  {
+    "bem": 526,
+    "identificacao": "DISTRIBUIDOR DE CORRETIVOS E SEMENTES BRUTTUS 12.000"
+  },
+  {
+    "bem": 525,
+    "identificacao": "MEDIDOR DE UMIDADE G 1000 GEHAKA"
+  },
+  {
+    "bem": 521,
+    "identificacao": "CONJUNTO INDUSTRIAL DE REFRIGERACAO CAMARA FRIA SEMENTES"
+  },
+  {
+    "bem": 469,
+    "identificacao": "MEDIDOR DE UMIDADE 919 C MOTOMCO"
+  },
+  {
+    "bem": 468,
+    "identificacao": "MEDIDOR DE UMIDADE 999 ES MOTOMCO"
+  },
+  {
+    "bem": 467,
+    "identificacao": "MEDIDOR DE UMIDADE 919 ES MOTOMCO"
+  },
+  {
+    "bem": 461,
+    "identificacao": "TRATADOR E MISTURADOR DE SEMENTE - TMS 1000"
+  },
+  {
+    "bem": 458,
+    "identificacao": "HERCULES 6.0 - SEMEADORA ADUBADORA - 2019"
+  },
+  {
+    "bem": 454,
+    "identificacao": "CHAVE DE IMPACTO DCF889"
+  },
+  {
+    "bem": 453,
+    "identificacao": "CHAVE DE IMPACTO DCF889"
+  },
+  {
+    "bem": 448,
+    "identificacao": "SILO FAZ IRMAOS CORAGEM"
+  },
+  {
+    "bem": 432,
+    "identificacao": "COLHEITADEIRA MASSEY FERGUSON MF 38"
+  },
+  {
+    "bem": 429,
+    "identificacao": "SEMEADORA ELETRICA ESS 63 + KIT C SENSOR"
+  },
+  {
+    "bem": 428,
+    "identificacao": "SEMEADORA ELETRICA ESS 63 + KIT C SENSOR"
+  },
+  {
+    "bem": 427,
+    "identificacao": "SEMEADORA ELETRICA ESS 63 + KIT C SENSOR"
+  },
+  {
+    "bem": 420,
+    "identificacao": "COLHEITADEIRA S680"
+  },
+  {
+    "bem": 410,
+    "identificacao": "GERADOR"
+  },
+  {
+    "bem": 405,
+    "identificacao": "PRENSA HIDRAULICA V65 TF"
+  },
+  {
+    "bem": 395,
+    "identificacao": "COLHEITADEIRA S680"
+  },
+  {
+    "bem": 388,
+    "identificacao": "ACELERADOR DE GRAOS JD CORPO LARGO (MOD ALTA PERF)"
+  },
+  {
+    "bem": 386,
+    "identificacao": "TRATOR AGRALE 5075.4"
+  },
+  {
+    "bem": 381,
+    "identificacao": "TRATOR TM 180"
+  },
+  {
+    "bem": 380,
+    "identificacao": "TRATOR VALMET 1280"
+  },
+  {
+    "bem": 378,
+    "identificacao": "TRATOR CBT 2105"
+  },
+  {
+    "bem": 376,
+    "identificacao": "PULVERIZADOR UNIPORT 2000 ST-135"
+  },
+  {
+    "bem": 356,
+    "identificacao": "PULVERIZADOR UNIPORT 3030"
+  },
+  {
+    "bem": 354,
+    "identificacao": "PULVERIZADOR AUTOPROPELIDO 4730"
+  },
+  {
+    "bem": 348,
+    "identificacao": "TRATOR 8430"
+  },
+  {
+    "bem": 347,
+    "identificacao": "TRATOR 8400R - 2017"
+  },
+  {
+    "bem": 346,
+    "identificacao": "SEMI REBOQUE GUERRA/ TANQUE"
+  },
+  {
+    "bem": 332,
+    "identificacao": "TRATOR 8400R - 2018"
+  },
+  {
+    "bem": 330,
+    "identificacao": "COLHEITADEIRA 9750 STS"
+  },
+  {
+    "bem": 327,
+    "identificacao": "COLHEITADEIRA S680"
+  },
+  {
+    "bem": 326,
+    "identificacao": "PLANTADEIRA DB74 48 LINHAS"
+  },
+  {
+    "bem": 278,
+    "identificacao": "EXTRATOR DE GRÃOS NXT200"
+  },
+  {
+    "bem": 277,
+    "identificacao": "EMBUTIDORA DE GRÃOS-NSG 9200"
+  },
+  {
+    "bem": 276,
+    "identificacao": "DISTRIBUIDORA DE FERTILIZANTES 10500TTD"
+  },
+  {
+    "bem": 275,
+    "identificacao": "REBOQUE TANQUE GUERRA 30.000 LT"
+  },
+  {
+    "bem": 273,
+    "identificacao": "ROÇADEIRA DESBRAVADOR"
+  },
+  {
+    "bem": 263,
+    "identificacao": "PULVERIZADOR UNIPORT 2000 ST-135"
+  },
+  {
+    "bem": 255,
+    "identificacao": "PLANTADEIRA 2117"
+  },
+  {
+    "bem": 254,
+    "identificacao": "PLANTADEIRA 2117"
+  },
+  {
+    "bem": 248,
+    "identificacao": "ADUBADORA JUMIL 3206 - CULTIMAX"
+  },
+  {
+    "bem": 247,
+    "identificacao": "PLANTADEIRA 9213"
+  },
+  {
+    "bem": 246,
+    "identificacao": "PLANTADEIRA JUMIL 7080"
+  },
+  {
+    "bem": 243,
+    "identificacao": "TRATOR CBT 8060"
+  },
+  {
+    "bem": 242,
+    "identificacao": "TRATOR BH180 EB020098"
+  },
+  {
+    "bem": 241,
+    "identificacao": "COLHEITADEIRA CASE III 2399"
+  },
+  {
+    "bem": 239,
+    "identificacao": "PLANTADORA ADUBADORA JUMIL JM7080PD GUERRA"
+  },
+  {
+    "bem": 157,
+    "identificacao": "BALANCA DE FLUXO 240 BCF"
+  },
+  {
+    "bem": 156,
+    "identificacao": "EMBOLSADORA DE GRAOS"
+  },
+  {
+    "bem": 155,
+    "identificacao": "EMBOLSADORA DE GRAOS"
+  },
+  {
+    "bem": 142,
+    "identificacao": "HERCULES 6.0 - SEMEADORA ADUBADORA"
+  },
+  {
+    "bem": 140,
+    "identificacao": "MOTOPODA STIHL HT 75"
+  },
+  {
+    "bem": 139,
+    "identificacao": "EMPILHADEIRA TOYOTA"
+  },
+  {
+    "bem": 82,
+    "identificacao": "PRENSA HIDRAULICA SKAY - 60T"
+  },
+  {
+    "bem": 81,
+    "identificacao": "SERRA FITA PC GPL - 1CV"
+  },
+  {
+    "bem": 80,
+    "identificacao": "CARRO DE TRANSPORTE DRAPER 40'"
+  },
+  {
+    "bem": 79,
+    "identificacao": "GERADOR TOYAMA TD6000CXE - 5,5 KVA"
+  },
+  {
+    "bem": 78,
+    "identificacao": "COLHEITADEIRA S680"
+  },
+  {
+    "bem": 76,
+    "identificacao": "COLHEITADEIRA S680"
+  },
+  {
+    "bem": 75,
+    "identificacao": "COLHEITADEIRA 9750 STS"
+  },
+  {
+    "bem": 72,
+    "identificacao": "COLHEITADEIRA S690"
+  },
+  {
+    "bem": 71,
+    "identificacao": "MOTOR ELETRICO MONOFASICO 5CV"
+  },
+  {
+    "bem": 70,
+    "identificacao": "MISTURADOR DE RACAO MIN-1000"
+  },
+  {
+    "bem": 69,
+    "identificacao": "MOTOR ELETRICO MONOFASICO 15 CV"
+  },
+  {
+    "bem": 68,
+    "identificacao": "TRITURADOR DE MILHO TIN-3"
+  },
+  {
+    "bem": 67,
+    "identificacao": "MOTOSSERRA STIHL MS381"
+  },
+  {
+    "bem": 66,
+    "identificacao": "ROCADEIRA STIHL FS290"
+  },
+  {
+    "bem": 63,
+    "identificacao": "CARRETA ABERTA"
+  },
+  {
+    "bem": 62,
+    "identificacao": "MOTOSSERRA STIHL MS381"
+  },
+  {
+    "bem": 61,
+    "identificacao": "EQUIPAMENTO ROLL-ON ROLL-OFF GR25 (FIXO EM FORD CARGO 3133)"
+  },
+  {
+    "bem": 60,
+    "identificacao": "LAVADORA PS LAV 400"
+  },
+  {
+    "bem": 59,
+    "identificacao": "MOTOBOMBA BUFFALO B4 T2P MOTOR 5.5CV"
+  },
+  {
+    "bem": 58,
+    "identificacao": "APARADOR GRAMA MASTER 800"
+  },
+  {
+    "bem": 57,
+    "identificacao": "CONTAINER M18 PLATAFORMA"
+  },
+  {
+    "bem": 56,
+    "identificacao": "CONTAINER M12 TANQUE DE AGUA"
+  },
+  {
+    "bem": 55,
+    "identificacao": "TANQUE PARA COMBUSTIVEL"
+  },
+  {
+    "bem": 54,
+    "identificacao": "TANQUE PARA COMBUSTIVEL"
+  },
+  {
+    "bem": 53,
+    "identificacao": "CONTAINER M25 CACAMBA AGRICOLA"
+  },
+  {
+    "bem": 52,
+    "identificacao": "MAQUINA TRATAMENTO SEMENTES"
+  },
+  {
+    "bem": 50,
+    "identificacao": "DESENRAIZADOR ENLEIRADOR"
+  },
+  {
+    "bem": 49,
+    "identificacao": "ABASTECEDOR DE SEMENTES E FERTILIZANTES"
+  },
+  {
+    "bem": 44,
+    "identificacao": "TRATOR BH180S 4X4"
+  },
+  {
+    "bem": 43,
+    "identificacao": "TRATOR 7505"
+  },
+  {
+    "bem": 41,
+    "identificacao": "TRATOR 9460R"
+  },
+  {
+    "bem": 39,
+    "identificacao": "TRATOR 8335R"
+  },
+  {
+    "bem": 38,
+    "identificacao": "TRATOR 8335R"
+  },
+  {
+    "bem": 37,
+    "identificacao": "TRATOR  BH 180"
+  },
+  {
+    "bem": 35,
+    "identificacao": "PULVERIZADOR UNIPORT 3030"
+  },
+  {
+    "bem": 34,
+    "identificacao": "PULVERIZADOR AUTOPROPELIDO 4730"
+  },
+  {
+    "bem": 33,
+    "identificacao": "PULVERIZADOR UNIPORT 2500 STAR"
+  },
+  {
+    "bem": 31,
+    "identificacao": "PLANTADEIRA CASE 1215"
+  },
+  {
+    "bem": 30,
+    "identificacao": "PLANTADEIRA PL 2134 Nº15"
+  },
+  {
+    "bem": 29,
+    "identificacao": "PLANTADEIRA DB74 48 LINHAS"
+  },
+  {
+    "bem": 28,
+    "identificacao": "PLANTADEIRA DB74 48 LINHAS"
+  },
+  {
+    "bem": 27,
+    "identificacao": "HERCULES 10000 - SEMEADORA ADUBADORA"
+  },
+  {
+    "bem": 23,
+    "identificacao": "HERCULES 10000 - SEMEADORA ADUBADORA"
+  },
+  {
+    "bem": 13,
+    "identificacao": "HERCULES 24000 - SEMEADORA ADUBADORA"
+  },
+  {
+    "bem": 9,
+    "identificacao": "DISTRIBUIDOR DE SEMENTES E FERTILIZANTES JAN - SEMEA 3000"
+  },
+  {
+    "bem": 4,
+    "identificacao": "SEMEADEIRA"
+  },
+  {
+    "bem": 2,
+    "identificacao": "COLHEITADEIRA S1550"
+  }
+]

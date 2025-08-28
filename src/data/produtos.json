@@ -1,0 +1,14 @@
+[
+  {
+    "cod": 1,
+    "produto": "DISCO DE CORTE",
+    "localizacao": "PRAT A1",
+    "quantidade": 0
+  },
+  {
+    "cod": 2,
+    "produto": "DISCO FLAP",
+    "localizacao": "PRAT A2",
+    "quantidade": 5
+  }
+]
