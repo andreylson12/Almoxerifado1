@@ -1,17 +1,13 @@
 import { useState } from "react";
+import Select from "react-select";
 
 export default function MovForm({ produtos, funcionarios, maquinas, onAdd }) {
   const [tipo, setTipo] = useState("Entrada");
-  const [produtoId, setProdutoId] = useState("");
-  const [funcionarioId, setFuncionarioId] = useState("");
-  const [maquinaId, setMaquinaId] = useState("");
+  const [produto, setProduto] = useState(null);
+  const [funcionario, setFuncionario] = useState(null);
+  const [maquina, setMaquina] = useState(null);
   const [quantidade, setQuantidade] = useState("");
   const [atividade, setAtividade] = useState("");
-
-  // Estados para filtros
-  const [filtroProduto, setFiltroProduto] = useState("");
-  const [filtroFuncionario, setFiltroFuncionario] = useState("");
-  const [filtroMaquina, setFiltroMaquina] = useState("");
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -23,89 +19,67 @@ export default function MovForm({ produtos, funcionarios, maquinas, onAdd }) {
 
     onAdd({
       tipo,
-      produtoId: produtoId ? Number(produtoId) : null,
-      funcionarioId: funcionarioId ? Number(funcionarioId) : null,
-      maquinaId: maquinaId ? Number(maquinaId) : null,
+      produtoId: produto ? produto.value : null,
+      funcionarioId: funcionario ? funcionario.value : null,
+      maquinaId: maquina ? maquina.value : null,
       quantidade: Number(quantidade),
       atividade: atividade?.trim() || null,
     });
 
     // limpa o form
-    setProdutoId("");
-    setFuncionarioId("");
-    setMaquinaId("");
+    setProduto(null);
+    setFuncionario(null);
+    setMaquina(null);
     setQuantidade("");
     setAtividade("");
     setTipo("Entrada");
-    setFiltroProduto("");
-    setFiltroFuncionario("");
-    setFiltroMaquina("");
   };
+
+  // transforma os dados para o react-select
+  const produtoOptions = produtos.map((p) => ({ value: p.id, label: p.nome }));
+  const funcionarioOptions = funcionarios.map((f) => ({ value: f.id, label: f.nome }));
+  const maquinaOptions = maquinas.map((m) => ({ value: m.id, label: m.identificacao }));
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="border p-2 w-full">
+      {/* Tipo */}
+      <select
+        value={tipo}
+        onChange={(e) => setTipo(e.target.value)}
+        className="border p-2 w-full"
+      >
         <option>Entrada</option>
         <option>Saida</option>
       </select>
 
       {/* Produto */}
-      <input
-        type="text"
-        placeholder="Buscar produto..."
-        value={filtroProduto}
-        onChange={(e) => setFiltroProduto(e.target.value)}
-        className="border p-2 w-full"
+      <Select
+        options={produtoOptions}
+        value={produto}
+        onChange={setProduto}
+        placeholder="Selecione um produto..."
+        isClearable
       />
-      <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)} className="border p-2 w-full">
-        <option value="">Selecione um produto</option>
-        {produtos
-          .filter((p) =>
-            p.nome.toLowerCase().includes(filtroProduto.toLowerCase())
-          )
-          .map((p) => (
-            <option key={p.id} value={p.id}>{p.nome}</option>
-          ))}
-      </select>
 
       {/* Funcionário */}
-      <input
-        type="text"
-        placeholder="Buscar funcionário..."
-        value={filtroFuncionario}
-        onChange={(e) => setFiltroFuncionario(e.target.value)}
-        className="border p-2 w-full"
+      <Select
+        options={funcionarioOptions}
+        value={funcionario}
+        onChange={setFuncionario}
+        placeholder="Selecione um funcionário..."
+        isClearable
       />
-      <select value={funcionarioId} onChange={(e) => setFuncionarioId(e.target.value)} className="border p-2 w-full">
-        <option value="">Selecione um funcionário</option>
-        {funcionarios
-          .filter((f) =>
-            f.nome.toLowerCase().includes(filtroFuncionario.toLowerCase())
-          )
-          .map((f) => (
-            <option key={f.id} value={f.id}>{f.nome}</option>
-          ))}
-      </select>
 
       {/* Máquina */}
-      <input
-        type="text"
-        placeholder="Buscar máquina..."
-        value={filtroMaquina}
-        onChange={(e) => setFiltroMaquina(e.target.value)}
-        className="border p-2 w-full"
+      <Select
+        options={maquinaOptions}
+        value={maquina}
+        onChange={setMaquina}
+        placeholder="Selecione uma máquina..."
+        isClearable
       />
-      <select value={maquinaId} onChange={(e) => setMaquinaId(e.target.value)} className="border p-2 w-full">
-        <option value="">Selecione uma máquina</option>
-        {maquinas
-          .filter((m) =>
-            m.identificacao.toLowerCase().includes(filtroMaquina.toLowerCase())
-          )
-          .map((m) => (
-            <option key={m.id} value={m.id}>{m.identificacao}</option>
-          ))}
-      </select>
 
+      {/* Quantidade */}
       <input
         type="number"
         placeholder="Quantidade"
@@ -114,6 +88,7 @@ export default function MovForm({ produtos, funcionarios, maquinas, onAdd }) {
         className="border p-2 w-full"
       />
 
+      {/* Atividade */}
       <input
         type="text"
         placeholder="Atividade"
