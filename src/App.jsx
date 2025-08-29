@@ -10,6 +10,7 @@ import MaquinaForm from "./components/MaquinaForm";
 import MaquinasTable from "./components/MaquinasTable";
 import FuncionarioForm from "./components/FuncionarioForm";
 import FuncionariosTable from "./components/FuncionariosTable";
+import SaidaItem from "./components/SaidaItem"; // ⬅️ importei o scanner
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -28,12 +29,10 @@ export default function App() {
 
   // 🔐 Controle de autenticação Supabase
   useEffect(() => {
-    // Pega sessão atual
     supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user ?? null);
     });
 
-    // Escuta mudanças na sessão
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });
@@ -166,12 +165,11 @@ export default function App() {
     }
   };
 
-  // 🔎 Filtro de produtos
   const produtosFiltrados = produtos.filter((p) =>
     (p.nome || "").toLowerCase().includes(search.toLowerCase())
   );
 
-  // 🔐 Se não logado → tela de login
+  // 🔐 Tela de login
   if (!user) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-100">
@@ -206,7 +204,7 @@ export default function App() {
     );
   }
 
-  // Sistema principal
+  // 🖥️ Sistema principal
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       {/* Cabeçalho */}
@@ -224,13 +222,12 @@ export default function App() {
       </div>
 
       <Tabs
-        tabs={["Movimentações", "Produtos", "Máquinas", "Funcionários"]}
+        tabs={["Movimentações", "Produtos", "Máquinas", "Funcionários", "Saída QRCode"]}
         current={tab}
         onChange={setTab}
       />
 
       <div className="mt-6">
-        {/* MOVIMENTAÇÕES */}
         {tab === "Movimentações" && (
           <>
             <MovForm
@@ -243,7 +240,6 @@ export default function App() {
           </>
         )}
 
-        {/* PRODUTOS */}
         {tab === "Produtos" && (
           <>
             <ProdutoForm
@@ -283,7 +279,6 @@ export default function App() {
           </>
         )}
 
-        {/* MÁQUINAS */}
         {tab === "Máquinas" && (
           <>
             <MaquinaForm
@@ -314,7 +309,6 @@ export default function App() {
           </>
         )}
 
-        {/* FUNCIONÁRIOS */}
         {tab === "Funcionários" && (
           <>
             <FuncionarioForm
@@ -344,6 +338,9 @@ export default function App() {
             <FuncionariosTable data={funcionarios} />
           </>
         )}
+
+        {/* 🚀 Nova aba do QRCode */}
+        {tab === "Saída QRCode" && <SaidaItem />}
       </div>
     </div>
   );
