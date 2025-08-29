@@ -15,7 +15,8 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-select": "^5.8.0",
-    "firebase": "^11.0.0"
+    "firebase": "^11.0.0",
+    "react-qr-reader": "^3.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
