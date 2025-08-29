@@ -14,8 +14,9 @@ import FuncionarioForm from "./components/FuncionarioForm";
 import FuncionariosTable from "./components/FuncionariosTable";
 
 export default function App() {
-  const [tab, setTab] = useState("Movimentações");
   const [user, setUser] = useState(null);
+  const [tab, setTab] = useState("Movimentações");
+
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
