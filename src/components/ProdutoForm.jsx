@@ -1,22 +1,22 @@
 import { useState } from "react";
 import Select from "react-select";
-import { PlusCircleIcon } from "@heroicons/react/24/solid";
+import { PlusCircle } from "lucide-react";
 
 export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
   const [codigo, setCodigo] = useState("");
-  const [produto, setProduto] = useState(null); 
-  const [local, setLocal] = useState(null);     
+  const [produto, setProduto] = useState(null);   // react-select produto
+  const [local, setLocal] = useState(null);       // react-select local
   const [quantidade, setQuantidade] = useState(0);
 
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    if (!produto || !produto.label.trim()) {
+    if (!produto || !produto.label?.trim()) {
       alert("Informe o nome do produto");
       return;
     }
 
-    if (quantidade <= 0) {
+    if (Number(quantidade) <= 0) {
       alert("Informe uma quantidade válida");
       return;
     }
@@ -25,7 +25,7 @@ export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
       codigo,
       nome: produto.label.trim(),
       localizacao: local ? local.label.trim() : "",
-      quantidade,
+      quantidade: Number(quantidade),
     });
 
     // limpa o formulário
@@ -46,13 +46,10 @@ export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
   }));
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="bg-white shadow-md rounded-lg p-6"
-    >
+    <form onSubmit={handleSubmit} className="bg-white shadow-md rounded-lg p-6">
       {/* Título */}
       <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2 mb-4">
-        <PlusCircleIcon className="h-5 w-5 text-blue-600" />
+        <PlusCircle className="h-5 w-5 text-blue-600" />
         Cadastrar Produto
       </h2>
 
@@ -105,7 +102,7 @@ export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
           type="submit"
           className="w-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold py-2 rounded-lg flex items-center justify-center gap-2 transition"
         >
-          <PlusCircleIcon className="h-5 w-5" />
+          <PlusCircle className="h-5 w-5" />
           Adicionar Produto
         </button>
       </div>
