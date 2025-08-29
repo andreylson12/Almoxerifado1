@@ -86,7 +86,7 @@ export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
         {/* Quantidade */}
         <input
           type="number"
-          placeholder="Quantidade"
+          placeholder="0"
           value={quantidade}
           onChange={(e) => setQuantidade(parseInt(e.target.value) || 0)}
           className="border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-400 focus:outline-none"
