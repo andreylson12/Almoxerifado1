@@ -1,39 +1,42 @@
 export default function ProdutosTable({ data }) {
   return (
-    <table className="w-full border mt-4">
-      <thead>
-        <tr className="bg-gray-100">
-          <th className="border px-2 py-1">ID</th>
-          <th className="border px-2 py-1">Imagem</th>
-          <th className="border px-2 py-1">Nome</th>
-          <th className="border px-2 py-1">Localização</th>
-          <th className="border px-2 py-1">Quantidade</th>
-        </tr>
-      </thead>
-      <tbody>
-        {data.map((p) => (
-          <tr key={p.id}>
-            <td className="border px-2 py-1">{p.id}</td>
-
-            {/* Coluna da imagem */}
-            <td className="border px-2 py-1 text-center">
-              {p.imagem_url ? (
-                <img
-                  src={p.imagem_url}
-                  alt={p.nome}
-                  className="w-16 h-16 object-cover mx-auto rounded"
-                />
-              ) : (
-                <span>—</span>
-              )}
-            </td>
-
-            <td className="border px-2 py-1">{p.nome}</td>
-            <td className="border px-2 py-1">{p.localizacao || "—"}</td>
-            <td className="border px-2 py-1">{p.quantidade}</td>
+    <div className="bg-white shadow-lg rounded-2xl p-6 mt-6">
+      <h2 className="text-xl font-bold text-gray-700 mb-4">📦 Produtos</h2>
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="bg-gray-100 text-gray-700">
+            <th className="border-b px-3 py-2 text-left">ID</th>
+            <th className="border-b px-3 py-2 text-left">Imagem</th>
+            <th className="border-b px-3 py-2 text-left">Nome</th>
+            <th className="border-b px-3 py-2 text-left">Localização</th>
+            <th className="border-b px-3 py-2 text-left">Quantidade</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {data.map((p) => (
+            <tr
+              key={p.id}
+              className="hover:bg-gray-50 transition duration-150 ease-in-out"
+            >
+              <td className="border-b px-3 py-2">{p.id}</td>
+              <td className="border-b px-3 py-2">
+                {p.imagem_url ? (
+                  <img
+                    src={p.imagem_url}
+                    alt={p.nome}
+                    className="w-12 h-12 object-contain rounded-md border"
+                  />
+                ) : (
+                  <span className="text-gray-400 italic">Sem imagem</span>
+                )}
+              </td>
+              <td className="border-b px-3 py-2 font-medium text-gray-700">{p.nome}</td>
+              <td className="border-b px-3 py-2">{p.localizacao || "—"}</td>
+              <td className="border-b px-3 py-2 text-center">{p.quantidade}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
