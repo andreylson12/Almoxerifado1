@@ -1,101 +1,139 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useZxing } from "react-zxing";
 import { supabase } from "../supabaseClient";
 
 export default function SaidaItem() {
-  const [codigo, setCodigo] = useState("");
-  const [resultado, setResultado] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState("");
+  const [produto, setProduto] = useState(null);
+  const [funcionarios, setFuncionarios] = useState([]);
+  const [maquinas, setMaquinas] = useState([]);
+  const [funcionarioId, setFuncionarioId] = useState("");
+  const [maquinaId, setMaquinaId] = useState("");
+  const [atividade, setAtividade] = useState("");
+  const [quantidade, setQuantidade] = useState(1);
 
-  // Scanner configurado
+  // QRCode scanner
   const { ref } = useZxing({
-    onResult(result) {
-      if (result) {
-        const codeText = result.getText();
-        setCodigo(codeText);
-        registrarSaida(codeText);
-      }
+    onDecodeResult(result) {
+      setResult(result.getText());
     },
   });
 
-  const registrarSaida = async (codigo) => {
-    setLoading(true);
-    const { data: produto, error: erroProduto } = await supabase
-      .from("produtos")
-      .select("*")
-      .eq("codigo", codigo)
-      .single();
+  // Buscar produto pelo código
+  useEffect(() => {
+    const fetchProduto = async () => {
+      if (!result) return;
+      const { data, error } = await supabase
+        .from("produtos")
+        .select("*")
+        .eq("codigo", result)
+        .single();
+      if (!error) setProduto(data);
+    };
+    fetchProduto();
+  }, [result]);
 
-    if (erroProduto || !produto) {
-      setResultado("❌ Produto não encontrado!");
-      setLoading(false);
+  // Buscar funcionários e máquinas
+  useEffect(() => {
+    const fetchData = async () => {
+      const { data: funcs } = await supabase.from("funcionarios").select("*");
+      const { data: maqs } = await supabase.from("maquinas").select("*");
+      setFuncionarios(funcs || []);
+      setMaquinas(maqs || []);
+    };
+    fetchData();
+  }, []);
+
+  const handleRegistrarSaida = async () => {
+    if (!produto) {
+      alert("Nenhum produto encontrado.");
       return;
     }
 
-    const { error: erroMov } = await supabase
-      .from("movimentacoes")
-      .insert([{
-        produto_id: produto.id,
-        tipo: "Saida",
-        quantidade: 1,
-        data: new Date(),
-      }]);
-
-    if (erroMov) {
-      setResultado("❌ Erro ao registrar movimentação!");
-      setLoading(false);
-      return;
-    }
-
-    const { error: erroUpdate } = await supabase
+    // 1. Atualizar estoque
+    await supabase
       .from("produtos")
-      .update({ quantidade: produto.quantidade - 1 })
+      .update({ quantidade: produto.quantidade - quantidade })
       .eq("id", produto.id);
 
-    if (erroUpdate) {
-      setResultado("⚠️ Saída registrada, mas não atualizou estoque!");
-    } else {
-      setResultado(`✅ Saída registrada: ${produto.nome}`);
-    }
+    // 2. Registrar movimentação
+    await supabase.from("movimentacoes").insert([
+      {
+        tipo: "Saida",
+        produto_id: produto.id,
+        quantidade,
+        funcionario_id: funcionarioId || null,
+        maquina_id: maquinaId || null,
+        atividade: atividade || null,
+      },
+    ]);
 
-    setLoading(false);
+    alert("Saída registrada com sucesso!");
+    setResult("");
+    setProduto(null);
+    setFuncionarioId("");
+    setMaquinaId("");
+    setAtividade("");
+    setQuantidade(1);
   };
 
   return (
-    <div style={{ padding: 20 }}>
-      <h2>Saída de Produto</h2>
+    <div>
+      <h2>Saída de Produto via QR Code</h2>
 
       {/* Scanner */}
-      <video
-        ref={ref}
-        style={{ width: "100%", maxWidth: 400, margin: "0 auto", display: "block" }}
-      />
+      <video ref={ref} style={{ width: "300px" }} />
 
-      <p>Ou digite manualmente:</p>
-      <input
-        type="text"
-        value={codigo}
-        onChange={(e) => setCodigo(e.target.value)}
-        placeholder="Código do produto"
-        style={{ padding: 8, width: "100%", marginBottom: 10 }}
-      />
+      {/* Produto encontrado */}
+      {produto && (
+        <div>
+          <p><b>Produto:</b> {produto.nome}</p>
 
-      <button
-        onClick={() => registrarSaida(codigo)}
-        disabled={loading}
-        style={{
-          padding: 10,
-          width: "100%",
-          background: "#4CAF50",
-          color: "white",
-          border: "none",
-          cursor: "pointer"
-        }}
-      >
-        {loading ? "Registrando..." : "Registrar Saída"}
-      </button>
+          <div>
+            <label>Funcionário:</label>
+            <select value={funcionarioId} onChange={(e) => setFuncionarioId(e.target.value)}>
+              <option value="">Selecione...</option>
+              {funcionarios.map((f) => (
+                <option key={f.id} value={f.id}>{f.nome}</option>
+              ))}
+            </select>
+          </div>
 
-      <p>{resultado}</p>
+          <div>
+            <label>Máquina:</label>
+            <select value={maquinaId} onChange={(e) => setMaquinaId(e.target.value)}>
+              <option value="">Selecione...</option>
+              {maquinas.map((m) => (
+                <option key={m.id} value={m.id}>{m.nome}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label>Atividade:</label>
+            <input
+              type="text"
+              value={atividade}
+              onChange={(e) => setAtividade(e.target.value)}
+              placeholder="Descreva a atividade"
+            />
+          </div>
+
+          <div>
+            <label>Quantidade:</label>
+            <input
+              type="number"
+              value={quantidade}
+              onChange={(e) => setQuantidade(Number(e.target.value))}
+              min="1"
+            />
+          </div>
+
+          <button onClick={handleRegistrarSaida}>
+            Registrar Saída
+          </button>
+        </div>
+      )}
     </div>
   );
 }
