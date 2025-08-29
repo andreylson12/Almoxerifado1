@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { auth } from "./firebaseConfig";  // <-- certifique-se do caminho
-import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { supabase } from "./supabaseClient";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -11,16 +10,21 @@ export default function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setErro("");
-    try {
-      const cred = await signInWithEmailAndPassword(auth, email, senha);
-      setUser(cred.user);
-    } catch (error) {
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password: senha,
+    });
+
+    if (error) {
       setErro("Erro ao fazer login: " + error.message);
+    } else {
+      setUser(data.user);
     }
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await supabase.auth.signOut();
     setUser(null);
   };
 
