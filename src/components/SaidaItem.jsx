@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { QrScanner } from "react-zxing";
-import { supabase } from "./supabaseClient";
+import { supabase } from "../supabaseClient";
 
 export default function SaidaItem() {
   const [codigo, setCodigo] = useState("");
