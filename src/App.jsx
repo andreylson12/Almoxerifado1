@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
 import { auth } from "./firebaseConfig";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { supabase } from "./supabaseClient";
 
-import Login from "./Login";
 import Tabs from "./components/Tabs";
 import MovForm from "./components/MovForm";
 import MovTable from "./components/MovTable";
@@ -15,8 +14,11 @@ import FuncionarioForm from "./components/FuncionarioForm";
 import FuncionariosTable from "./components/FuncionariosTable";
 
 export default function App() {
-  const [user, setUser] = useState(null);
   const [tab, setTab] = useState("Movimentações");
+  const [user, setUser] = useState(null);
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
+  const [erro, setErro] = useState("");
 
   const [produtos, setProdutos] = useState([]);
   const [maquinas, setMaquinas] = useState([]);
@@ -31,9 +33,9 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // 🔄 Carrega dados do Supabase
+  // 🔄 Carrega dados do Supabase quando usuário está logado
   useEffect(() => {
-    if (!user) return; // só carrega se logado
+    if (!user) return;
 
     const fetchData = async () => {
       console.log("🔄 Carregando dados do Supabase...");
@@ -59,6 +61,22 @@ export default function App() {
 
     fetchData();
   }, [user]);
+
+  // 🔐 Login
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setErro("");
+    try {
+      await signInWithEmailAndPassword(auth, email, senha);
+    } catch (error) {
+      setErro("Erro ao fazer login: " + error.message);
+    }
+  };
+
+  // 🔐 Logout
+  const handleLogout = async () => {
+    await signOut(auth);
+  };
 
   // ➕ Salvar movimentação
   const handleMovimentacao = async (mov) => {
@@ -131,25 +149,56 @@ export default function App() {
     }
   };
 
+  // 🔎 Filtro de produtos
   const produtosFiltrados = produtos.filter((p) =>
     (p.nome || "").toLowerCase().includes(search.toLowerCase())
   );
 
-  // 🔐 Se não logado → mostra tela de login
+  // 🔐 Se não logado → tela de login
   if (!user) {
-    return <Login />;
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-100">
+        <form
+          onSubmit={handleLogin}
+          className="bg-white p-6 rounded-xl shadow-lg w-80 space-y-4"
+        >
+          <h2 className="text-xl font-semibold text-center">Login</h2>
+          {erro && <p className="text-red-500 text-sm">{erro}</p>}
+          <input
+            type="email"
+            placeholder="Digite seu email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-400"
+          />
+          <input
+            type="password"
+            placeholder="Digite sua senha"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-400"
+          />
+          <button
+            type="submit"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg"
+          >
+            Entrar
+          </button>
+        </form>
+      </div>
+    );
   }
 
   // Sistema principal
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      {/* Cabeçalho com Logout */}
+      {/* Cabeçalho */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Almoxarifado</h1>
         <div className="flex items-center gap-3">
           <span className="text-gray-600">{user.email}</span>
           <button
-            onClick={() => signOut(auth)}
+            onClick={handleLogout}
             className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg"
           >
             Sair
