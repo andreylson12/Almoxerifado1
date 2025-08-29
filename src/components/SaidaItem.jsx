@@ -1,6 +1,6 @@
 import { useState } from "react";
-import QrReader from "react-qr-reader";
-import { supabase } from "../supabaseClient"; // atenção no caminho!
+import { QrReader } from "react-qr-reader"; // ✅ versão correta
+import { supabase } from "./supabaseClient";
 
 export default function SaidaItem() {
   const [codigo, setCodigo] = useState("");
@@ -10,6 +10,7 @@ export default function SaidaItem() {
   const registrarSaida = async (codigo) => {
     setLoading(true);
 
+    // 1. Busca produto pelo código
     const { data: produto, error: erroProduto } = await supabase
       .from("produtos")
       .select("*")
@@ -22,13 +23,14 @@ export default function SaidaItem() {
       return;
     }
 
+    // 2. Insere na tabela movimentacoes
     const { error: erroMov } = await supabase
       .from("movimentacoes")
       .insert([
         {
           produto_id: produto.id,
           tipo: "saida",
-          quantidade: 1,
+          quantidade: 1, // futuramente pode ser input
           data: new Date(),
         },
       ]);
@@ -39,6 +41,7 @@ export default function SaidaItem() {
       return;
     }
 
+    // 3. Atualiza estoque
     const { error: erroUpdate } = await supabase
       .from("produtos")
       .update({ quantidade: produto.quantidade - 1 })
@@ -57,15 +60,19 @@ export default function SaidaItem() {
     <div style={{ padding: 20 }}>
       <h2>Saída de Produto</h2>
 
+      {/* Scanner de QR Code */}
       <QrReader
-        delay={300}
-        onScan={(data) => {
-          if (data) {
-            setCodigo(data);
-            registrarSaida(data);
+        onResult={(result, error) => {
+          if (!!result) {
+            const codigoLido = result?.text;
+            setCodigo(codigoLido);
+            registrarSaida(codigoLido);
+          }
+          if (!!error) {
+            console.info(error);
           }
         }}
-        onError={(err) => console.error(err)}
+        constraints={{ facingMode: "environment" }}
         style={{ width: "100%" }}
       />
 
@@ -87,7 +94,7 @@ export default function SaidaItem() {
           background: "#4CAF50",
           color: "white",
           border: "none",
-          cursor: "pointer"
+          cursor: "pointer",
         }}
       >
         {loading ? "Registrando..." : "Registrar Saída"}
