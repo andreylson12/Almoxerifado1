@@ -1,6 +1,4 @@
 import { useState, useEffect } from "react";
-import { auth } from "./firebaseConfig";
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { supabase } from "./supabaseClient";
 
 import Tabs from "./components/Tabs";
@@ -28,10 +26,21 @@ export default function App() {
 
   const [search, setSearch] = useState("");
 
-  // 🔐 Controle de autenticação Firebase
+  // 🔐 Controle de autenticação Supabase
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
-    return () => unsub();
+    // Pega sessão atual
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null);
+    });
+
+    // Escuta mudanças na sessão
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   // 🔄 Carrega dados do Supabase quando usuário está logado
@@ -67,16 +76,23 @@ export default function App() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setErro("");
-    try {
-      await signInWithEmailAndPassword(auth, email, senha);
-    } catch (error) {
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password: senha,
+    });
+
+    if (error) {
       setErro("Erro ao fazer login: " + error.message);
+    } else {
+      setUser(data.user);
     }
   };
 
   // 🔐 Logout
   const handleLogout = async () => {
-    await signOut(auth);
+    await supabase.auth.signOut();
+    setUser(null);
   };
 
   // ➕ Salvar movimentação
