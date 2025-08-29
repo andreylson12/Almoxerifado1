@@ -1,10 +1,11 @@
 import { useState } from "react";
 import Select from "react-select";
+import { PlusCircleIcon } from "@heroicons/react/24/solid";
 
 export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
   const [codigo, setCodigo] = useState("");
-  const [produto, setProduto] = useState(null); // react-select produto
-  const [local, setLocal] = useState(null);     // react-select local
+  const [produto, setProduto] = useState(null); 
+  const [local, setLocal] = useState(null);     
   const [quantidade, setQuantidade] = useState(0);
 
   const handleSubmit = (e) => {
@@ -22,14 +23,12 @@ export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
       quantidade,
     });
 
-    // limpa o form
     setCodigo("");
     setProduto(null);
     setLocal(null);
     setQuantidade(0);
   };
 
-  // opções vindas do banco/lista
   const produtoOptions = produtos.map((p) => ({
     value: p.id,
     label: p.nome,
@@ -43,54 +42,67 @@ export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-3 p-4 border rounded bg-white shadow"
+      className="bg-white shadow-md rounded-lg p-6"
     >
-      <h2 className="text-lg font-semibold">Cadastrar Produto</h2>
+      {/* Título */}
+      <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2 mb-4">
+        <PlusCircleIcon className="h-5 w-5 text-blue-600" />
+        Cadastrar Produto
+      </h2>
 
-      {/* Código */}
-      <input
-        type="text"
-        placeholder="Código"
-        value={codigo}
-        onChange={(e) => setCodigo(e.target.value)}
-        className="border p-2 w-full"
-      />
+      {/* Grid dos inputs */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Código */}
+        <input
+          type="text"
+          placeholder="Código"
+          value={codigo}
+          onChange={(e) => setCodigo(e.target.value)}
+          className="border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-400 focus:outline-none"
+        />
 
-      {/* Produto */}
-      <Select
-        options={produtoOptions}
-        value={produto}
-        onChange={setProduto}
-        placeholder="Digite ou selecione um produto..."
-        isClearable
-        isSearchable
-      />
+        {/* Produto */}
+        <Select
+          options={produtoOptions}
+          value={produto}
+          onChange={setProduto}
+          placeholder="Digite ou selecione um produto..."
+          isClearable
+          isSearchable
+          className="text-sm"
+        />
 
-      {/* Localização */}
-      <Select
-        options={localOptions}
-        value={local}
-        onChange={setLocal}
-        placeholder="Digite ou selecione a localização..."
-        isClearable
-        isSearchable
-      />
+        {/* Localização */}
+        <Select
+          options={localOptions}
+          value={local}
+          onChange={setLocal}
+          placeholder="Digite ou selecione a localização..."
+          isClearable
+          isSearchable
+          className="text-sm"
+        />
 
-      {/* Quantidade */}
-      <input
-        type="number"
-        placeholder="0"
-        value={quantidade}
-        onChange={(e) => setQuantidade(parseInt(e.target.value) || 0)}
-        className="border p-2 w-full"
-      />
+        {/* Quantidade */}
+        <input
+          type="number"
+          placeholder="Quantidade"
+          value={quantidade}
+          onChange={(e) => setQuantidade(parseInt(e.target.value) || 0)}
+          className="border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-400 focus:outline-none"
+        />
+      </div>
 
-      <button
-        type="submit"
-        className="bg-blue-600 text-white px-4 py-2 rounded w-full"
-      >
-        Adicionar Produto
-      </button>
+      {/* Botão */}
+      <div className="mt-5">
+        <button
+          type="submit"
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg flex items-center justify-center gap-2 transition"
+        >
+          <PlusCircleIcon className="h-5 w-5" />
+          Adicionar Produto
+        </button>
+      </div>
     </form>
   );
 }
