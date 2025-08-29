@@ -1,11 +1,22 @@
 import { useState } from "react";
-import { QrScanner } from "react-zxing";
+import { useZxing } from "react-zxing";
 import { supabase } from "../supabaseClient";
 
 export default function SaidaItem() {
   const [codigo, setCodigo] = useState("");
   const [resultado, setResultado] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Scanner configurado
+  const { ref } = useZxing({
+    onResult(result) {
+      if (result) {
+        const codeText = result.getText();
+        setCodigo(codeText);
+        registrarSaida(codeText);
+      }
+    },
+  });
 
   const registrarSaida = async (codigo) => {
     setLoading(true);
@@ -54,16 +65,10 @@ export default function SaidaItem() {
     <div style={{ padding: 20 }}>
       <h2>Saída de Produto</h2>
 
-      <QrScanner
-        onResult={(result) => {
-          if (result) {
-            const codeText = result.getText();
-            setCodigo(codeText);
-            registrarSaida(codeText);
-          }
-        }}
-        constraints={{ facingMode: "environment" }}
-        containerStyle={{ width: "100%", maxWidth: 400, margin: "0 auto" }}
+      {/* Scanner */}
+      <video
+        ref={ref}
+        style={{ width: "100%", maxWidth: 400, margin: "0 auto", display: "block" }}
       />
 
       <p>Ou digite manualmente:</p>
