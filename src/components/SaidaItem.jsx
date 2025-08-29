@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { QrReader } from "react-qr-reader"; // ✅ versão correta
+import { QrScanner } from "react-zxing";
 import { supabase } from "./supabaseClient";
 
 export default function SaidaItem() {
@@ -9,8 +9,6 @@ export default function SaidaItem() {
 
   const registrarSaida = async (codigo) => {
     setLoading(true);
-
-    // 1. Busca produto pelo código
     const { data: produto, error: erroProduto } = await supabase
       .from("produtos")
       .select("*")
@@ -23,17 +21,14 @@ export default function SaidaItem() {
       return;
     }
 
-    // 2. Insere na tabela movimentacoes
     const { error: erroMov } = await supabase
       .from("movimentacoes")
-      .insert([
-        {
-          produto_id: produto.id,
-          tipo: "saida",
-          quantidade: 1, // futuramente pode ser input
-          data: new Date(),
-        },
-      ]);
+      .insert([{
+        produto_id: produto.id,
+        tipo: "Saida",
+        quantidade: 1,
+        data: new Date(),
+      }]);
 
     if (erroMov) {
       setResultado("❌ Erro ao registrar movimentação!");
@@ -41,14 +36,13 @@ export default function SaidaItem() {
       return;
     }
 
-    // 3. Atualiza estoque
     const { error: erroUpdate } = await supabase
       .from("produtos")
       .update({ quantidade: produto.quantidade - 1 })
       .eq("id", produto.id);
 
     if (erroUpdate) {
-      setResultado("⚠️ Movimentação registrada, mas não atualizou estoque!");
+      setResultado("⚠️ Saída registrada, mas não atualizou estoque!");
     } else {
       setResultado(`✅ Saída registrada: ${produto.nome}`);
     }
@@ -60,20 +54,16 @@ export default function SaidaItem() {
     <div style={{ padding: 20 }}>
       <h2>Saída de Produto</h2>
 
-      {/* Scanner de QR Code */}
-      <QrReader
-        onResult={(result, error) => {
-          if (!!result) {
-            const codigoLido = result?.text;
-            setCodigo(codigoLido);
-            registrarSaida(codigoLido);
-          }
-          if (!!error) {
-            console.info(error);
+      <QrScanner
+        onResult={(result) => {
+          if (result) {
+            const codeText = result.getText();
+            setCodigo(codeText);
+            registrarSaida(codeText);
           }
         }}
         constraints={{ facingMode: "environment" }}
-        style={{ width: "100%" }}
+        containerStyle={{ width: "100%", maxWidth: 400, margin: "0 auto" }}
       />
 
       <p>Ou digite manualmente:</p>
@@ -94,7 +84,7 @@ export default function SaidaItem() {
           background: "#4CAF50",
           color: "white",
           border: "none",
-          cursor: "pointer",
+          cursor: "pointer"
         }}
       >
         {loading ? "Registrando..." : "Registrar Saída"}
