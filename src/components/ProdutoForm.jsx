@@ -4,8 +4,8 @@ import { PlusCircleIcon } from "@heroicons/react/24/solid";
 
 export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
   const [codigo, setCodigo] = useState("");
-  const [produto, setProduto] = useState(null);
-  const [local, setLocal] = useState(null);
+  const [produto, setProduto] = useState(null); 
+  const [local, setLocal] = useState(null);     
   const [quantidade, setQuantidade] = useState(0);
 
   const handleSubmit = (e) => {
@@ -13,6 +13,11 @@ export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
 
     if (!produto || !produto.label.trim()) {
       alert("Informe o nome do produto");
+      return;
+    }
+
+    if (quantidade <= 0) {
+      alert("Informe uma quantidade válida");
       return;
     }
 
@@ -89,7 +94,7 @@ export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
           type="number"
           placeholder="Digite a quantidade"
           value={quantidade}
-          onChange={(e) => setQuantidade(parseInt(e.target.value) || 0)}
+          onChange={(e) => setQuantidade(Number(e.target.value) || 0)}
           className="border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-400 focus:outline-none"
         />
       </div>
@@ -98,7 +103,7 @@ export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
       <div className="mt-5">
         <button
           type="submit"
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg flex items-center justify-center gap-2 transition"
+          className="w-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold py-2 rounded-lg flex items-center justify-center gap-2 transition"
         >
           <PlusCircleIcon className="h-5 w-5" />
           Adicionar Produto
