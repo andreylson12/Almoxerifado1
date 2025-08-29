@@ -4,8 +4,8 @@ import { PlusCircleIcon } from "@heroicons/react/24/solid";
 
 export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
   const [codigo, setCodigo] = useState("");
-  const [produto, setProduto] = useState(null); 
-  const [local, setLocal] = useState(null);     
+  const [produto, setProduto] = useState(null);
+  const [local, setLocal] = useState(null);
   const [quantidade, setQuantidade] = useState(0);
 
   const handleSubmit = (e) => {
@@ -23,6 +23,7 @@ export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
       quantidade,
     });
 
+    // limpa o formulário
     setCodigo("");
     setProduto(null);
     setLocal(null);
@@ -86,7 +87,7 @@ export default function ProdutoForm({ onAdd, produtos = [], locais = [] }) {
         {/* Quantidade */}
         <input
           type="number"
-          placeholder="0"
+          placeholder="Digite a quantidade"
           value={quantidade}
           onChange={(e) => setQuantidade(parseInt(e.target.value) || 0)}
           className="border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-400 focus:outline-none"
