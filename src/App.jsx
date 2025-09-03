@@ -10,7 +10,7 @@ import MaquinaForm from "./components/MaquinaForm";
 import MaquinasTable from "./components/MaquinasTable";
 import FuncionarioForm from "./components/FuncionarioForm";
 import FuncionariosTable from "./components/FuncionariosTable";
-import SaidaItem from "./components/SaidaItem"; // ⬅️ importei o scanner
+
 
 export default function App() {
   const [user, setUser] = useState(null);
