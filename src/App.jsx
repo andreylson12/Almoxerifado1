@@ -10,7 +10,11 @@ import MaquinaForm from "./components/MaquinaForm";
 import MaquinasTable from "./components/MaquinasTable";
 import FuncionarioForm from "./components/FuncionarioForm";
 import FuncionariosTable from "./components/FuncionariosTable";
+// Se VOCÊ removeu a tela de QRCode, remova também a aba e o bloco de renderização no final!
+// import SaidaItem from "./components/SaidaItem";
 
+// 🔵 PAGINAÇÃO PRODUTOS
+const PROD_PAGE_SIZE = 50;
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -27,6 +31,11 @@ export default function App() {
 
   const [search, setSearch] = useState("");
 
+  // 🔵 PAGINAÇÃO PRODUTOS - estados
+  const [prodPage, setProdPage] = useState(1);
+  const [prodTotal, setProdTotal] = useState(0);
+  const [prodLoading, setProdLoading] = useState(false);
+
   // 🔐 Controle de autenticação Supabase
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -42,34 +51,75 @@ export default function App() {
     };
   }, []);
 
+  // 🔵 PAGINAÇÃO PRODUTOS - função de busca remota
+  const fetchProdutos = async (page = 1, term = "") => {
+    setProdLoading(true);
+    const from = (page - 1) * PROD_PAGE_SIZE;
+    const to = from + PROD_PAGE_SIZE - 1;
+
+    let query = supabase
+      .from("produtos")
+      .select("*", { count: "exact" })
+      .order("id", { ascending: true })
+      .range(from, to);
+
+    if (term && term.trim()) {
+      query = supabase
+        .from("produtos")
+        .select("*", { count: "exact" })
+        .ilike("nome", `%${term.trim()}%`)
+        .order("id", { ascending: true })
+        .range(from, to);
+    }
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      console.error("Erro ao carregar produtos:", error);
+    } else {
+      setProdutos(data || []);
+      setProdTotal(count || 0);
+      setProdPage(page);
+    }
+    setProdLoading(false);
+  };
+
   // 🔄 Carrega dados do Supabase quando usuário está logado
   useEffect(() => {
     if (!user) return;
 
-    const fetchData = async () => {
-      console.log("🔄 Carregando dados do Supabase...");
-      const { data: produtosData } = await supabase.from("produtos").select("*");
+    const fetchOthers = async () => {
+      console.log("🔄 Carregando dados (exceto produtos)...");
       const { data: maquinasData } = await supabase.from("maquinas").select("*");
       const { data: funcionariosData } = await supabase.from("funcionarios").select("*");
       const { data: movsData } = await supabase
         .from("movimentacoes")
-        .select(`
+        .select(
+          `
           *,
           produtos (nome, localizacao),
           funcionarios (nome),
           maquinas (identificacao)
-        `)
+        `
+        )
         .order("created_at", { ascending: false });
 
-      setProdutos(produtosData || []);
       setMaquinas(maquinasData || []);
       setFuncionarios(funcionariosData || []);
       setMovimentacoes(movsData || []);
-      console.log("✅ Dados carregados.");
+      console.log("✅ Dados (exceto produtos) carregados.");
     };
 
-    fetchData();
+    // Produtos paginados + demais tabelas
+    fetchProdutos(1, search);
+    fetchOthers();
   }, [user]);
+
+  // 🔵 Pesquisar produtos (busca remota, pega desde a página 1)
+  useEffect(() => {
+    if (!user) return;
+    fetchProdutos(1, search);
+  }, [search, user]);
 
   // 🔐 Login
   const handleLogin = async (e) => {
@@ -123,12 +173,14 @@ export default function App() {
       const { data, error } = await supabase
         .from("movimentacoes")
         .insert([payload])
-        .select(`
+        .select(
+          `
           *,
           produtos (nome, localizacao),
           funcionarios (nome),
           maquinas (identificacao)
-        `);
+        `
+        );
 
       if (error) {
         console.error("❌ Erro ao salvar movimentação:", error);
@@ -151,9 +203,8 @@ export default function App() {
             .eq("id", payload.produto_id);
 
           if (!estoqueError) {
-            setProdutos((prev) =>
-              prev.map((p) => (p.id === payload.produto_id ? { ...p, quantidade: novoEstoque } : p))
-            );
+            // 🔵 Recarrega a página atual de produtos para refletir o estoque correto
+            fetchProdutos(prodPage, search);
           }
         }
       }
@@ -164,10 +215,6 @@ export default function App() {
       alert("Falha ao salvar movimentação: " + e.message);
     }
   };
-
-  const produtosFiltrados = produtos.filter((p) =>
-    (p.nome || "").toLowerCase().includes(search.toLowerCase())
-  );
 
   // 🔐 Tela de login
   if (!user) {
@@ -205,6 +252,8 @@ export default function App() {
   }
 
   // 🖥️ Sistema principal
+  const prodLastPage = Math.max(1, Math.ceil(prodTotal / PROD_PAGE_SIZE));
+
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       {/* Cabeçalho */}
@@ -222,6 +271,7 @@ export default function App() {
       </div>
 
       <Tabs
+        // Se removeu a tela de QRCode, retire "Saída QRCode" da lista abaixo
         tabs={["Movimentações", "Produtos", "Máquinas", "Funcionários", "Saída QRCode"]}
         current={tab}
         onChange={setTab}
@@ -257,17 +307,20 @@ export default function App() {
                     return;
                   }
 
-                  const { data, error } = await supabase
+                  const { error } = await supabase
                     .from("produtos")
-                    .insert([produtoCorrigido])
-                    .select();
+                    .insert([produtoCorrigido]);
 
-                  if (!error) setProdutos((prev) => [...prev, ...data]);
+                  if (!error) {
+                    // 🔵 Recarrega a listagem (primeira página) para incluir o novo item
+                    fetchProdutos(1, search);
+                  }
                 } catch (e) {
                   alert("Falha ao salvar produto: " + e.message);
                 }
               }}
             />
+
             <input
               type="text"
               placeholder="Pesquisar produto..."
@@ -275,7 +328,47 @@ export default function App() {
               onChange={(e) => setSearch(e.target.value)}
               className="border p-2 mt-4 w-full"
             />
-            <ProdutosTable data={produtosFiltrados} />
+
+            {prodLoading ? (
+              <div className="p-4">Carregando produtos…</div>
+            ) : (
+              <ProdutosTable data={produtos} />
+            )}
+
+            {/* 🔵 Controles de paginação */}
+            <div className="flex flex-wrap items-center gap-2 mt-4">
+              <button
+                onClick={() => fetchProdutos(1, search)}
+                disabled={prodPage === 1}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+              >
+                Primeiro
+              </button>
+              <button
+                onClick={() => fetchProdutos(prodPage - 1, search)}
+                disabled={prodPage === 1}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+              >
+                Anterior
+              </button>
+              <span className="px-2">
+                Total: {prodTotal} • Página {prodPage} de {prodLastPage}
+              </span>
+              <button
+                onClick={() => fetchProdutos(prodPage + 1, search)}
+                disabled={prodPage >= prodLastPage}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+              >
+                Próxima
+              </button>
+              <button
+                onClick={() => fetchProdutos(prodLastPage, search)}
+                disabled={prodPage >= prodLastPage}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+              >
+                Última
+              </button>
+            </div>
           </>
         )}
 
@@ -339,8 +432,8 @@ export default function App() {
           </>
         )}
 
-        {/* 🚀 Nova aba do QRCode */}
-        {tab === "Saída QRCode" && <SaidaItem />}
+        {/* 🚀 Nova aba do QRCode (remova se não usa) */}
+        {/* {tab === "Saída QRCode" && <SaidaItem />} */}
       </div>
     </div>
   );
