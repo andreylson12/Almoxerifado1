@@ -1,4 +1,6 @@
-export default function MovTable({ data }) {
+export default function MovTable({ data, onDelete }) {
+  const hasActions = typeof onDelete === "function";
+
   return (
     <table className="w-full mt-4 border-collapse bg-white shadow rounded">
       <thead>
@@ -10,6 +12,7 @@ export default function MovTable({ data }) {
           <th className="p-2 border">Funcionário</th>
           <th className="p-2 border">Máquina</th>
           <th className="p-2 border">Atividade</th>
+          {hasActions && <th className="p-2 border">Ações</th>}
         </tr>
       </thead>
       <tbody>
@@ -30,6 +33,19 @@ export default function MovTable({ data }) {
             <td className="p-2 border">{mov.funcionarios?.nome || "—"}</td>
             <td className="p-2 border">{mov.maquinas?.identificacao || "—"}</td>
             <td className="p-2 border">{mov.atividade}</td>
+
+            {hasActions && (
+              <td className="p-2 border text-center">
+                <button
+                  type="button"
+                  onClick={() => onDelete(mov)}
+                  className="px-3 py-1 rounded border text-red-600 hover:text-red-800 hover:bg-red-50 transition"
+                  title="Excluir movimentação"
+                >
+                  Excluir
+                </button>
+              </td>
+            )}
           </tr>
         ))}
       </tbody>
