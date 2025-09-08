@@ -211,6 +211,77 @@ export default function App() {
     }
   };
 
+  // 🗑️ Excluir movimentação (com reversão de estoque)
+  const handleExcluirMovimentacao = async (mov) => {
+    try {
+      if (!mov?.id) return alert("Movimentação inválida.");
+
+      const ok = window.confirm(
+        "Excluir esta movimentação? O estoque será ajustado automaticamente."
+      );
+      if (!ok) return;
+
+      // Garante que temos os campos essenciais
+      let movimento = mov;
+      if (
+        movimento.produto_id === undefined ||
+        movimento.quantidade === undefined ||
+        movimento.tipo === undefined
+      ) {
+        const { data: row, error } = await supabase
+          .from("movimentacoes")
+          .select("id, tipo, produto_id, quantidade")
+          .eq("id", mov.id)
+          .single();
+        if (error) throw error;
+        movimento = row;
+      }
+
+      const { produto_id, tipo, quantidade } = movimento;
+
+      // Se houver produto vinculado, reverte o estoque
+      if (produto_id) {
+        const { data: prod, error: prodErr } = await supabase
+          .from("produtos")
+          .select("id, quantidade")
+          .eq("id", produto_id)
+          .single();
+        if (prodErr) throw prodErr;
+
+        const atual = Number(prod?.quantidade ?? 0);
+        // Entrada excluída => tira do estoque; Saída excluída => devolve ao estoque
+        const delta = tipo === "Entrada" ? -Number(quantidade) : Number(quantidade);
+        const novo = atual + delta;
+
+        if (novo < 0) {
+          return alert("A exclusão resultaria em estoque negativo. Operação cancelada.");
+        }
+
+        const { error: upErr } = await supabase
+          .from("produtos")
+          .update({ quantidade: novo })
+          .eq("id", produto_id);
+        if (upErr) throw upErr;
+      }
+
+      // Remove a movimentação
+      const { error: delErr } = await supabase
+        .from("movimentacoes")
+        .delete()
+        .eq("id", mov.id);
+      if (delErr) throw delErr;
+
+      // Atualiza estados locais
+      setMovimentacoes((prev) => prev.filter((m) => m.id !== mov.id));
+      fetchProdutos(prodPage, search); // mantém lista de produtos coerente
+
+      alert("Movimentação excluída com sucesso.");
+    } catch (e) {
+      console.error("Erro ao excluir movimentação:", e);
+      alert("Falha ao excluir movimentação: " + (e.message || e.toString()));
+    }
+  };
+
   // 🔐 Tela de login
   if (!user) {
     return (
@@ -286,7 +357,8 @@ export default function App() {
               maquinas={maquinas}
               onAdd={handleMovimentacao}
             />
-            <MovTable data={movimentacoes} />
+            {/* 👇 Passa o deletar como prop sem alterar mais nada */}
+            <MovTable data={movimentacoes} onDelete={handleExcluirMovimentacao} />
           </>
         )}
 
