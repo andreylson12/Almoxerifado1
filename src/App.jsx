@@ -10,8 +10,7 @@ import MaquinaForm from "./components/MaquinaForm";
 import MaquinasTable from "./components/MaquinasTable";
 import FuncionarioForm from "./components/FuncionarioForm";
 import FuncionariosTable from "./components/FuncionariosTable";
-// Se VOCÊ removeu a tela de QRCode, remova também a aba e o bloco de renderização no final!
-// import SaidaItem from "./components/SaidaItem";
+import Inventario from "./components/Inventario"; // 👈 NOVO
 
 // 🔵 PAGINAÇÃO PRODUTOS
 const PROD_PAGE_SIZE = 50;
@@ -89,7 +88,6 @@ export default function App() {
     if (!user) return;
 
     const fetchOthers = async () => {
-      console.log("🔄 Carregando dados (exceto produtos)...");
       const { data: maquinasData } = await supabase.from("maquinas").select("*");
       const { data: funcionariosData } = await supabase.from("funcionarios").select("*");
       const { data: movsData } = await supabase
@@ -107,7 +105,6 @@ export default function App() {
       setMaquinas(maquinasData || []);
       setFuncionarios(funcionariosData || []);
       setMovimentacoes(movsData || []);
-      console.log("✅ Dados (exceto produtos) carregados.");
     };
 
     // Produtos paginados + demais tabelas
@@ -167,8 +164,6 @@ export default function App() {
         quantidade: Number(mov.quantidade ?? 0),
         atividade: mov.atividade ?? null,
       };
-
-      console.log("📝 Inserindo movimentação:", payload);
 
       const { data, error } = await supabase
         .from("movimentacoes")
@@ -271,8 +266,13 @@ export default function App() {
       </div>
 
       <Tabs
-        // Se removeu a tela de QRCode, retire "Saída QRCode" da lista abaixo
-        tabs={["Movimentações", "Produtos", "Máquinas", "Funcionários", "Saída QRCode"]}
+        tabs={[
+          "Movimentações",
+          "Produtos",
+          "Inventário", // 👈 NOVO
+          "Máquinas",
+          "Funcionários",
+        ]}
         current={tab}
         onChange={setTab}
       />
@@ -372,6 +372,10 @@ export default function App() {
           </>
         )}
 
+        {tab === "Inventário" && (
+          <Inventario pageSize={50} /> // 👈 NOVO
+        )}
+
         {tab === "Máquinas" && (
           <>
             <MaquinaForm
@@ -431,9 +435,6 @@ export default function App() {
             <FuncionariosTable data={funcionarios} />
           </>
         )}
-
-        {/* 🚀 Nova aba do QRCode (remova se não usa) */}
-        {/* {tab === "Saída QRCode" && <SaidaItem />} */}
       </div>
     </div>
   );
