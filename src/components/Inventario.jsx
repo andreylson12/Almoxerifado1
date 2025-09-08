@@ -69,7 +69,7 @@ export default function Inventario({ pageSize = 50 }) {
     return Number(c) - estoque;
   };
 
-  // aplica filtro "Somente divergências" na UI (não mexe no backend)
+  // aplica filtro "Somente divergências" na UI
   const visibleRows = useMemo(() => {
     if (!onlyDiff) return rows;
     return rows.filter((p) => {
@@ -113,7 +113,6 @@ export default function Inventario({ pageSize = 50 }) {
 
   const toCsvValue = (v) => {
     const s = String(v ?? "");
-    // escapa aspas e envolve em aspas duplas
     return `"${s.replace(/"/g, '""')}"`;
   };
 
@@ -183,6 +182,124 @@ export default function Inventario({ pageSize = 50 }) {
     }
   };
 
+  // ---------- AJUSTE (por linha e em lote) ----------
+  const adjustOne = async (prod) => {
+    const cont = contagens[prod.id];
+    if (cont === "" || cont === undefined) {
+      alert("Digite a contagem para este produto.");
+      return;
+    }
+    const estoque = Number(prod.quantidade ?? 0);
+    const diff = Number(cont) - estoque;
+    if (diff === 0) {
+      alert("Sem diferença para ajustar.");
+      return;
+    }
+
+    const tipo = diff > 0 ? "Entrada" : "Saida";
+    const quantidade = Math.abs(diff);
+
+    if (
+      !window.confirm(
+        `Confirmar ajuste do produto #${prod.id}:\n` +
+          `Contagem: ${cont}\nEstoque atual: ${estoque}\n` +
+          `Movimentação: ${tipo} de ${quantidade} un.\n\n` +
+          `O estoque do produto será atualizado para ${cont}.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      // 1) registra movimentação
+      const { error: movErr } = await supabase.from("movimentacoes").insert([
+        {
+          tipo,
+          produto_id: prod.id,
+          funcionario_id: null,
+          maquina_id: null,
+          quantidade,
+          atividade: "Ajuste de inventário",
+        },
+      ]);
+      if (movErr) throw movErr;
+
+      // 2) atualiza estoque (valor final = cont)
+      const { error: upErr } = await supabase
+        .from("produtos")
+        .update({ quantidade: Number(cont) })
+        .eq("id", prod.id);
+      if (upErr) throw upErr;
+
+      // recarrega a página atual
+      await loadPage(page, q);
+    } catch (e) {
+      console.error("Erro ao ajustar produto:", e);
+      alert("Falha ao ajustar produto: " + e.message);
+    }
+  };
+
+  const adjustVisibleDiffs = async () => {
+    const targets = visibleRows.filter((p) => {
+      const c = contagens[p.id];
+      if (c === "" || c === undefined) return false;
+      return Number(c) !== Number(p.quantidade ?? 0);
+    });
+
+    if (targets.length === 0) {
+      alert("Não há divergências com contagem digitada nos itens visíveis.");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Aplicar ajustes para ${targets.length} item(ns) visível(is)?\n` +
+          `Uma movimentação será criada para cada item e o estoque será atualizado.`
+      )
+    ) {
+      return;
+    }
+
+    let ok = 0;
+    let fail = 0;
+
+    for (const prod of targets) {
+      const cont = Number(contagens[prod.id]);
+      const estoque = Number(prod.quantidade ?? 0);
+      const diff = cont - estoque;
+      const tipo = diff > 0 ? "Entrada" : "Saida";
+      const quantidade = Math.abs(diff);
+
+      try {
+        const { error: movErr } = await supabase.from("movimentacoes").insert([
+          {
+            tipo,
+            produto_id: prod.id,
+            funcionario_id: null,
+            maquina_id: null,
+            quantidade,
+            atividade: "Ajuste de inventário",
+          },
+        ]);
+        if (movErr) throw movErr;
+
+        const { error: upErr } = await supabase
+          .from("produtos")
+          .update({ quantidade: cont })
+          .eq("id", prod.id);
+        if (upErr) throw upErr;
+
+        ok++;
+      } catch (e) {
+        console.error(`Falha ao ajustar #${prod.id}:`, e);
+        fail++;
+      }
+    }
+
+    await loadPage(page, q);
+    alert(`Ajustes concluídos. Sucesso: ${ok} • Falhas: ${fail}`);
+  };
+
   // ---------- UI ----------
   return (
     <div className="bg-white shadow-md rounded-lg p-4">
@@ -221,6 +338,14 @@ export default function Inventario({ pageSize = 50 }) {
           >
             Exportar CSV (divergências)
           </button>
+
+          <button
+            className="px-3 py-2 border rounded hover:bg-gray-50"
+            onClick={adjustVisibleDiffs}
+            title="Aplica ajustes para itens visíveis com divergência"
+          >
+            Ajustar divergências (visíveis)
+          </button>
         </div>
       </div>
 
@@ -235,18 +360,19 @@ export default function Inventario({ pageSize = 50 }) {
               <th className="px-3 py-2 text-center">Estoque</th>
               <th className="px-3 py-2 text-center">Contagem</th>
               <th className="px-3 py-2 text-center">Diferença</th>
+              <th className="px-3 py-2 text-center">Ações</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td className="px-4 py-6 text-center text-gray-500" colSpan={7}>
+                <td className="px-4 py-6 text-center text-gray-500" colSpan={8}>
                   Carregando…
                 </td>
               </tr>
             ) : visibleRows.length === 0 ? (
               <tr>
-                <td className="px-4 py-6 text-center text-gray-500" colSpan={7}>
+                <td className="px-4 py-6 text-center text-gray-500" colSpan={8}>
                   Nenhum item encontrado.
                 </td>
               </tr>
@@ -261,6 +387,8 @@ export default function Inventario({ pageSize = 50 }) {
                     : diff > 0
                     ? "bg-yellow-100 text-yellow-700"
                     : "bg-red-100 text-red-700";
+
+                const canAdjust = diff !== null && diff !== 0;
 
                 return (
                   <tr
@@ -304,6 +432,16 @@ export default function Inventario({ pageSize = 50 }) {
                       >
                         {diff === null ? "—" : diff}
                       </span>
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <button
+                        className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-50"
+                        disabled={!canAdjust}
+                        onClick={() => adjustOne(p)}
+                        title="Gerar movimentação e ajustar estoque para a contagem"
+                      >
+                        Ajustar
+                      </button>
                     </td>
                   </tr>
                 );
