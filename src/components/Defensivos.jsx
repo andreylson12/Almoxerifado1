@@ -204,7 +204,11 @@ export default function Defensivos() {
       }
 
       // 3) Recalcula estoque (se função existir)
-      await supabase.rpc("recalcular_estoque_defensivos").catch(() => {});
+      try {
+        await supabase.rpc("recalcular_estoque_defensivos");
+      } catch (_) {
+        /* ignora se a função não existir */
+      }
 
       setPreview(null);
       fetchList();
@@ -257,8 +261,12 @@ export default function Defensivos() {
         .insert([payload]);
       if (error) throw error;
 
-      // recalcula/atualiza estoque
-      await supabase.rpc("recalcular_estoque_defensivos").catch(() => {});
+      // recalcula/atualiza estoque (se tiver a função)
+      try {
+        await supabase.rpc("recalcular_estoque_defensivos");
+      } catch (_) {
+        /* ignora se a função não existir */
+      }
       await fetchList();
 
       // limpa os campos
@@ -536,7 +544,7 @@ export default function Defensivos() {
               <th className="p-2 text-left">Localização</th>
             </tr>
           </thead>
-        <tbody>
+          <tbody>
             {loading ? (
               <tr>
                 <td className="p-4 text-center" colSpan={6}>
