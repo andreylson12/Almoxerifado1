@@ -10,12 +10,8 @@ import MaquinaForm from "./components/MaquinaForm";
 import MaquinasTable from "./components/MaquinasTable";
 import FuncionarioForm from "./components/FuncionarioForm";
 import FuncionariosTable from "./components/FuncionariosTable";
-import Inventario from "./components/Inventario"; // 👈 já existia
-
-// 👇 NOVOS imports (Defensivos)
-import DefensivoForm from "./components/DefensivoForm";
-import DefensivosTable from "./components/DefensivosTable";
-import NFImportDef from "./components/NFImportDef";
+import Inventario from "./components/Inventario"; // 👈 mantém
+import Defensivos from "./components/Defensivos"; // 👈 NOVO
 
 // 🔵 PAGINAÇÃO PRODUTOS
 const PROD_PAGE_SIZE = 50;
@@ -33,10 +29,6 @@ export default function App() {
   const [funcionarios, setFuncionarios] = useState([]);
   const [movimentacoes, setMovimentacoes] = useState([]);
 
-  // 👇 ESTADOS Defensivos (novos)
-  const [defensivos, setDefensivos] = useState([]);
-  const [defSearch, setDefSearch] = useState("");
-
   const [search, setSearch] = useState("");
 
   // 🔵 PAGINAÇÃO PRODUTOS - estados
@@ -50,11 +42,9 @@ export default function App() {
       setUser(data.session?.user ?? null);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUser(session?.user ?? null);
-      }
-    );
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
 
     return () => {
       listener.subscription.unsubscribe();
@@ -94,15 +84,6 @@ export default function App() {
     setProdLoading(false);
   };
 
-  // 👇 Buscar defensivos (novo)
-  const refreshDefensivos = async () => {
-    const { data, error } = await supabase
-      .from("defensivos")
-      .select("*")
-      .order("nome", { ascending: true });
-    if (!error) setDefensivos(data || []);
-  };
-
   // 🔄 Carrega dados do Supabase quando usuário está logado
   useEffect(() => {
     if (!user) return;
@@ -130,8 +111,7 @@ export default function App() {
     // Produtos paginados + demais tabelas
     fetchProdutos(1, search);
     fetchOthers();
-    refreshDefensivos(); // 👈 carrega defensivos também
-  }, [user]); // eslint-disable-line
+  }, [user]);
 
   // 🔵 Pesquisar produtos (busca remota, pega desde a página 1)
   useEffect(() => {
@@ -153,8 +133,6 @@ export default function App() {
       setErro("Erro ao fazer login: " + error.message);
     } else {
       setUser(data.user);
-      // pós-login: garantir dados atualizados do módulo
-      refreshDefensivos();
     }
   };
 
@@ -173,10 +151,7 @@ export default function App() {
 
       if (mov.tipo === "Saida" && prodId) {
         const produtoAtual = produtos.find((p) => p.id === prodId);
-        if (
-          produtoAtual &&
-          Number(produtoAtual.quantidade ?? 0) < Number(mov.quantidade ?? 0)
-        ) {
+        if (produtoAtual && Number(produtoAtual.quantidade ?? 0) < Number(mov.quantidade ?? 0)) {
           alert("Estoque insuficiente para essa saída.");
           return;
         }
@@ -247,7 +222,7 @@ export default function App() {
       );
       if (!ok) return;
 
-      // Garante que temos os campos essenciais
+      // Buscar campos essenciais se não estiverem no objeto
       let movimento = mov;
       if (
         movimento.produto_id === undefined ||
@@ -265,7 +240,7 @@ export default function App() {
 
       const { produto_id, tipo, quantidade } = movimento;
 
-      // Se houver produto vinculado, reverte o estoque
+      // Reverte estoque se houver produto vinculado
       if (produto_id) {
         const { data: prod, error: prodErr } = await supabase
           .from("produtos")
@@ -275,15 +250,11 @@ export default function App() {
         if (prodErr) throw prodErr;
 
         const atual = Number(prod?.quantidade ?? 0);
-        // Entrada excluída => tira do estoque; Saída excluída => devolve ao estoque
-        const delta =
-          tipo === "Entrada" ? -Number(quantidade) : Number(quantidade);
+        const delta = tipo === "Entrada" ? -Number(quantidade) : Number(quantidade);
         const novo = atual + delta;
 
         if (novo < 0) {
-          return alert(
-            "A exclusão resultaria em estoque negativo. Operação cancelada."
-          );
+          return alert("A exclusão resultaria em estoque negativo. Operação cancelada.");
         }
 
         const { error: upErr } = await supabase
@@ -302,7 +273,7 @@ export default function App() {
 
       // Atualiza estados locais
       setMovimentacoes((prev) => prev.filter((m) => m.id !== mov.id));
-      fetchProdutos(prodPage, search); // mantém lista de produtos coerente
+      fetchProdutos(prodPage, search);
 
       alert("Movimentação excluída com sucesso.");
     } catch (e) {
@@ -370,7 +341,7 @@ export default function App() {
           "Movimentações",
           "Produtos",
           "Inventário",
-          "Defensivos",     // 👈 NOVA ABA
+          "Defensivos",   // 👈 NOVO
           "Máquinas",
           "Funcionários",
         ]}
@@ -387,7 +358,7 @@ export default function App() {
               maquinas={maquinas}
               onAdd={handleMovimentacao}
             />
-            {/* 👇 Passa o deletar como prop sem alterar mais nada */}
+            {/* mantém e passa o deletar */}
             <MovTable data={movimentacoes} onDelete={handleExcluirMovimentacao} />
           </>
         )}
@@ -414,7 +385,6 @@ export default function App() {
                     .insert([produtoCorrigido]);
 
                   if (!error) {
-                    // 🔵 Recarrega a listagem (primeira página) para incluir o novo item
                     fetchProdutos(1, search);
                   }
                 } catch (e) {
@@ -474,46 +444,12 @@ export default function App() {
           </>
         )}
 
-        {tab === "Inventário" && <Inventario pageSize={50} />}
+        {tab === "Inventário" && (
+          <Inventario pageSize={50} />
+        )}
 
-        {/* 🟢 NOVA ABA: DEFENSIVOS */}
         {tab === "Defensivos" && (
-          <>
-            <NFImportDef onAfterImport={refreshDefensivos} />
-
-            <div className="mt-4">
-              <DefensivoForm
-                onAdd={async (d) => {
-                  const { error } = await supabase.from("defensivos").insert([d]);
-                  if (error) {
-                    alert("Erro ao salvar defensivo.");
-                  } else {
-                    refreshDefensivos();
-                  }
-                }}
-              />
-            </div>
-
-            <input
-              type="text"
-              placeholder="Pesquisar defensivo..."
-              value={defSearch}
-              onChange={(e) => setDefSearch(e.target.value)}
-              className="border p-2 mt-4 w-full"
-            />
-
-            <DefensivosTable
-              data={defensivos.filter(
-                (d) =>
-                  (d.nome || "")
-                    .toLowerCase()
-                    .includes(defSearch.toLowerCase()) ||
-                  (d.tipo || "")
-                    .toLowerCase()
-                    .includes(defSearch.toLowerCase())
-              )}
-            />
-          </>
+          <Defensivos />   {/* 👈 NOVO */}
         )}
 
         {tab === "Máquinas" && (
