@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
-import { Upload, Loader2 } from "lucide-react";
+import { Upload, Loader2, FileSpreadsheet, MinusCircle } from "lucide-react";
 
-/** NCM -> Tipo (expanda conforme necessário) */
+/** NCM -> Tipo (ajuste/expanda conforme sua necessidade) */
 const NCM_TO_TIPO = {
   "38089993": "Acaricida",
   "38089199": "Inseticida",
@@ -10,6 +10,7 @@ const NCM_TO_TIPO = {
   "29155010": "Adjuvante",
   "31052000": "Fertilizante",
   "34029029": "Adjuvante",
+  // fallback: Outro
 };
 
 function toNumber(s) {
@@ -30,6 +31,15 @@ export default function Defensivos() {
   // Pré-visualização de XML
   const [preview, setPreview] = useState(null);
   const [busyImport, setBusyImport] = useState(false);
+
+  // ===== Saída rápida =====
+  const [saida, setSaida] = useState({
+    defensivo_id: "",
+    quantidade: "",
+    unidade: "",
+    origem: "Aplicação",
+  });
+  const setSaidaField = (k, v) => setSaida((s) => ({ ...s, [k]: v }));
 
   // ====== Carrega lista (da VIEW de estoque) ======
   const fetchList = async () => {
@@ -78,15 +88,14 @@ export default function Defensivos() {
 
           const nome = (prod.querySelector("xProd")?.textContent || "").trim();
           const ncm = (prod.querySelector("NCM")?.textContent || "").trim();
-
           // unidade do XML pode vir 'LT', 'L', etc
           let unidade = (prod.querySelector("uCom")?.textContent || "").trim().toUpperCase();
           if (unidade === "LT") unidade = "L";
-
-          // quantidade: prioriza qCom, cai para qTrib
-          const quantidade =
-            toNumber(prod.querySelector("qCom")?.textContent) ||
-            toNumber(prod.querySelector("qTrib")?.textContent);
+          // quantidade
+          const quantidade = toNumber(
+            prod.querySelector("qCom")?.textContent ??
+              prod.querySelector("qTrib")?.textContent
+          );
 
           // Lotes / rastro (opcional)
           const lotes = Array.from(det.querySelectorAll("rastro")).map((r) => ({
@@ -133,6 +142,7 @@ export default function Defensivos() {
         unidade: it.unidade || null,
       }));
 
+      // upsert por nome (garanta unique constraint em nome **ou** troque para outro campo)
       const { data: upserted, error: upErr } = await supabase
         .from("defensivos")
         .upsert(upserts, { onConflict: "nome" })
@@ -140,7 +150,7 @@ export default function Defensivos() {
 
       if (upErr) throw upErr;
 
-      // mapa nome -> id
+      // cria um mapa nome -> id
       const idByName = new Map(upserted.map((d) => [d.nome, d.id]));
 
       // 2) Monta movimentações (Entrada)
@@ -149,13 +159,13 @@ export default function Defensivos() {
         const defensivo_id = idByName.get(it.nome);
         if (!defensivo_id) continue;
 
+        // se existirem lotes, cria 1 mov por lote; senão, 1 mov único
         if (it.lotes?.length) {
           for (const l of it.lotes) {
-            const qtd = l.qLote || it.quantidade || 0;
             movimentos.push({
               tipo: "Entrada",
               defensivo_id,
-              quantidade: qtd,
+              quantidade: l.qLote || it.quantidade || 0,
               unidade: it.unidade,
               origem: "NF-e",
               nf_numero: preview.nf || null,
@@ -188,11 +198,11 @@ export default function Defensivos() {
         if (movErr) throw movErr;
       }
 
-      // 3) (Opcional) recalcula estoque — sem usar .catch()
-      const { error: rpcErr } = await supabase.rpc("recalcular_estoque_defensivos");
-      if (rpcErr) {
-        // apenas loga; não bloqueia o fluxo
-        console.warn("RPC recalcular_estoque_defensivos retornou erro:", rpcErr.message || rpcErr);
+      // 3) (Opcional) recalcular via função, se existir
+      try {
+        await supabase.rpc("recalcular_estoque_defensivos");
+      } catch (_) {
+        /* ignora se não existir */
       }
 
       // 4) limpa preview e recarrega lista
@@ -204,6 +214,53 @@ export default function Defensivos() {
       alert("Falha ao lançar entradas.");
     } finally {
       setBusyImport(false);
+    }
+  };
+
+  // ====== Registrar Saída (abate estoque) ======
+  const registrarSaida = async () => {
+    try {
+      const id = Number(saida.defensivo_id || 0);
+      const qtd = Number(saida.quantidade || 0);
+
+      if (!id) return alert("Selecione o defensivo.");
+      if (!qtd || qtd <= 0) return alert("Informe uma quantidade válida.");
+
+      const def = rows.find((r) => r.id === id);
+      const estoqueAtual = Number(def?.estoque || 0);
+      const unidade = saida.unidade || def?.unidade || null;
+
+      if (qtd > estoqueAtual) {
+        return alert(
+          `Estoque insuficiente. Estoque atual: ${estoqueAtual} ${unidade || ""}`
+        );
+      }
+
+      const payload = {
+        tipo: "Saida",
+        defensivo_id: id,
+        quantidade: qtd,
+        unidade,
+        origem: saida.origem || "Aplicação",
+      };
+
+      const { error } = await supabase
+        .from("defensivo_movimentacoes")
+        .insert([payload]);
+      if (error) throw error;
+
+      // (Opcional) chamar função de recalcular, se houver
+      try {
+        await supabase.rpc("recalcular_estoque_defensivos");
+      } catch (_) {}
+
+      // atualizar lista e limpar form
+      await fetchList();
+      setSaida({ defensivo_id: "", quantidade: "", unidade: "", origem: "Aplicação" });
+      alert("Saída registrada com sucesso.");
+    } catch (err) {
+      console.error(err);
+      alert("Falha ao registrar saída.");
     }
   };
 
@@ -311,6 +368,69 @@ export default function Defensivos() {
             </table>
           </div>
         ) : null}
+      </div>
+
+      {/* Saída rápida */}
+      <div className="bg-white p-4 rounded-lg shadow space-y-3">
+        <h3 className="font-semibold flex items-center gap-2">
+          <MinusCircle className="h-4 w-4 text-red-600" />
+          Saída rápida (abate estoque)
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <select
+            className="border rounded px-3 py-2"
+            value={saida.defensivo_id}
+            onChange={(e) => {
+              const id = Number(e.target.value || 0);
+              const def = rows.find((r) => r.id === id);
+              setSaida((s) => ({
+                ...s,
+                defensivo_id: e.target.value,
+                unidade: def?.unidade || "",
+              }));
+            }}
+          >
+            <option value="">Selecione o defensivo…</option>
+            {rows.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.nome} {r.unidade ? `(${r.unidade})` : ""} — Estoque: {Number(r.estoque || 0)}
+              </option>
+            ))}
+          </select>
+
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            className="border rounded px-3 py-2"
+            placeholder="Quantidade"
+            value={saida.quantidade}
+            onChange={(e) => setSaidaField("quantidade", e.target.value)}
+          />
+
+          <input
+            className="border rounded px-3 py-2"
+            placeholder="Unidade"
+            value={saida.unidade}
+            onChange={(e) => setSaidaField("unidade", e.target.value)}
+          />
+
+          <input
+            className="border rounded px-3 py-2"
+            placeholder="Origem/Destino (ex: Aplicação)"
+            value={saida.origem}
+            onChange={(e) => setSaidaField("origem", e.target.value)}
+          />
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            onClick={registrarSaida}
+            className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+          >
+            Registrar Saída
+          </button>
+        </div>
       </div>
 
       {/* Busca */}
