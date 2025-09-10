@@ -10,7 +10,6 @@ const NCM_TO_TIPO = {
   "29155010": "Adjuvante",
   "31052000": "Fertilizante",
   "34029029": "Adjuvante",
-  // fallback -> "Outro"
 };
 
 function toNumber(s) {
@@ -23,11 +22,11 @@ function mapTipoByNcm(ncm) {
 }
 
 export default function Defensivos() {
-  const [rows, setRows] = useState([]);              // para o select de defensivos
-  const [q, setQ] = useState("");                    // busca da lista (aba Entrada)
+  const [rows, setRows] = useState([]);              // defensivos + estoque (para selects)
+  const [q, setQ] = useState("");                    // busca (aba Entrada)
   const [loading, setLoading] = useState(false);
 
-  const [subTab, setSubTab] = useState("Entrada");   // "Entrada" | "Saída"
+  const [subTab, setSubTab] = useState("Entrada");   // "Entrada" | "Saída" | "Inventário"
 
   // ====== XML / Pré-visualização de NF-e ======
   const [preview, setPreview] = useState(null);
@@ -48,9 +47,21 @@ export default function Defensivos() {
   });
   const setS = (k, v) => setSaida((s) => ({ ...s, [k]: v }));
 
-  // ====== Tabela de Saídas (lista) ======
+  // ====== Lista de SAÍDAS ======
   const [saidas, setSaidas] = useState([]);
   const [loadingSaidas, setLoadingSaidas] = useState(false);
+
+  // ====== Inventário (contagem/ajuste) ======
+  const [inv, setInv] = useState({
+    defensivo_id: "",
+    contagem: "",
+    unidade: "",
+    observacoes: "",
+  });
+  const setInvField = (k, v) => setInv((s) => ({ ...s, [k]: v }));
+
+  const [ajustes, setAjustes] = useState([]);        // histórico de ajustes
+  const [loadingAjustes, setLoadingAjustes] = useState(false);
 
   // -------- Carrega lista de defensivos (view de estoque) --------
   const fetchList = async () => {
@@ -75,12 +86,8 @@ export default function Defensivos() {
   const fetchSaidas = async () => {
     setLoadingSaidas(true);
     try {
-      // USE UMA das duas relações abaixo (a que existir no seu schema).
-      // 1) Geralmente o Supabase cria com esse nome:
+      // troque o nome do relacionamento se no seu schema for outro
       const rel = "defensivo_movimentacoes_defensivo_id_fkey";
-      // 2) Se no seu banco a relação for "def_mov_defensivo_fk", troque a linha de baixo por:
-      // const rel = "def_mov_defensivo_fk";
-
       const { data, error } = await supabase
         .from("defensivo_movimentacoes")
         .select(
@@ -104,13 +111,38 @@ export default function Defensivos() {
     }
   };
 
-  useEffect(() => {
-    fetchList();
-  }, []);
+  // -------- Carrega histórico de AJUSTES (origem Inventário) --------
+  const fetchAjustes = async () => {
+    setLoadingAjustes(true);
+    try {
+      const rel = "defensivo_movimentacoes_defensivo_id_fkey";
+      const { data, error } = await supabase
+        .from("defensivo_movimentacoes")
+        .select(
+          `
+          id, created_at, tipo, quantidade, unidade, observacoes,
+          defensivo:defensivos!${rel} ( id, nome )
+        `
+        )
+        .eq("origem", "Inventário")
+        .order("created_at", { ascending: false })
+        .limit(200);
 
-  // ao trocar para a sub-aba Saída, carrega a lista de saídas
+      if (error) throw error;
+      setAjustes(data || []);
+    } catch (err) {
+      console.error("Falha ao carregar ajustes:", err);
+      alert("Falha ao carregar ajustes de inventário.");
+    } finally {
+      setLoadingAjustes(false);
+    }
+  };
+
+  useEffect(() => { fetchList(); }, []);
+
   useEffect(() => {
     if (subTab === "Saída") fetchSaidas();
+    if (subTab === "Inventário") fetchAjustes();
   }, [subTab]);
 
   // ====== Parse do(s) XML ======
@@ -170,7 +202,7 @@ export default function Defensivos() {
     }
   };
 
-  // ====== Lançar ENTRADAS da pré-visualização ======
+  // ====== Lançar ENTRADAS ======
   const lancarEntradas = async () => {
     if (!preview?.itens?.length) return;
 
@@ -235,10 +267,7 @@ export default function Defensivos() {
         if (movErr) throw movErr;
       }
 
-      // Recalcula estoque (se a função existir)
-      try {
-        await supabase.rpc("recalcular_estoque_defensivos");
-      } catch (_) {}
+      try { await supabase.rpc("recalcular_estoque_defensivos"); } catch (_) {}
 
       setPreview(null);
       fetchList();
@@ -265,7 +294,6 @@ export default function Defensivos() {
       if (!defensivo_id) return alert("Selecione o defensivo.");
       if (!quantidade || quantidade <= 0) return alert("Informe uma quantidade válida.");
 
-      // valida estoque (se disponível)
       const row = rows.find((r) => r.id === defensivo_id);
       if (row && Number(row.estoque || 0) < quantidade) {
         return alert("Estoque insuficiente para essa saída.");
@@ -289,15 +317,11 @@ export default function Defensivos() {
       const { error } = await supabase.from("defensivo_movimentacoes").insert([payload]);
       if (error) throw error;
 
-      // recalcula/atualiza estoque (ignora erro se não existir)
-      try {
-        await supabase.rpc("recalcular_estoque_defensivos");
-      } catch (_) {}
+      try { await supabase.rpc("recalcular_estoque_defensivos"); } catch (_) {}
 
-      await fetchList();   // mantém estoque coerente no select
-      await fetchSaidas(); // atualiza listagem de saídas
+      await fetchList();
+      await fetchSaidas();
 
-      // limpa formulário
       setSaida({
         defensivo_id: "",
         quantidade: "",
@@ -318,6 +342,54 @@ export default function Defensivos() {
     }
   };
 
+  // ====== Registrar AJUSTE DE INVENTÁRIO ======
+  const registrarInventario = async () => {
+    try {
+      const defensivo_id = Number(inv.defensivo_id);
+      const contagem = Number(inv.contagem);
+
+      if (!defensivo_id) return alert("Selecione o defensivo.");
+      if (!Number.isFinite(contagem) || contagem < 0) {
+        return alert("Informe uma contagem válida (>= 0).");
+      }
+
+      const row = rows.find((r) => r.id === defensivo_id);
+      const atual = Number(row?.estoque || 0);
+      const diff = contagem - atual;
+
+      if (diff === 0) {
+        alert("Sem diferença entre contagem e estoque atual.");
+        return;
+      }
+
+      const isEntrada = diff > 0;
+      const payload = {
+        tipo: isEntrada ? "Entrada" : "Saida",
+        defensivo_id,
+        quantidade: Math.abs(diff),
+        unidade: inv.unidade || row?.unidade || null,
+        origem: "Inventário",
+        observacoes:
+          inv.observacoes ||
+          `Ajuste de inventário. Contagem=${contagem}, EstoqueAnterior=${atual}`,
+      };
+
+      const { error } = await supabase.from("defensivo_movimentacoes").insert([payload]);
+      if (error) throw error;
+
+      try { await supabase.rpc("recalcular_estoque_defensivos"); } catch (_) {}
+
+      await fetchList();
+      await fetchAjustes();
+
+      setInv({ defensivo_id: "", contagem: "", unidade: "", observacoes: "" });
+      alert("Ajuste de inventário registrado.");
+    } catch (err) {
+      console.error(err);
+      alert("Falha ao registrar ajuste de inventário.");
+    }
+  };
+
   // ====== Filtro local da lista (apenas para a aba Entrada) ======
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -333,7 +405,7 @@ export default function Defensivos() {
     <div className="space-y-4">
       {/* Sub-abas */}
       <div className="flex gap-2">
-        {["Entrada", "Saída"].map((t) => (
+        {["Entrada", "Saída", "Inventário"].map((t) => (
           <button
             key={t}
             onClick={() => setSubTab(t)}
@@ -366,12 +438,8 @@ export default function Defensivos() {
               <div className="mt-3 border rounded-lg overflow-hidden">
                 <div className="px-3 py-2 bg-slate-50 flex items-center justify-between text-sm">
                   <div>
-                    <span className="mr-4">
-                      NF: <b>{preview.nf || "—"}</b>
-                    </span>
-                    <span>
-                      Fornecedor: <b>{preview.fornecedor || "—"}</b>
-                    </span>
+                    <span className="mr-4">NF: <b>{preview.nf || "—"}</b></span>
+                    <span>Fornecedor: <b>{preview.fornecedor || "—"}</b></span>
                   </div>
                   <button
                     disabled={busyImport}
@@ -421,19 +489,9 @@ export default function Defensivos() {
                             }}
                           >
                             {[
-                              "Herbicida",
-                              "Fungicida",
-                              "Inseticida",
-                              "Acaricida",
-                              "Nematicida",
-                              "Adjuvante",
-                              "Fertilizante",
-                              "Outro",
-                            ].map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
+                              "Herbicida","Fungicida","Inseticida","Acaricida",
+                              "Nematicida","Adjuvante","Fertilizante","Outro",
+                            ].map((t) => <option key={t} value={t}>{t}</option>)}
                           </select>
                         </td>
                       </tr>
@@ -444,7 +502,7 @@ export default function Defensivos() {
             ) : null}
           </div>
 
-          {/* Busca + Lista de defensivos (apenas na Entrada) */}
+          {/* Busca + Lista de defensivos */}
           <input
             className="border rounded px-3 py-2 w-full"
             placeholder="Pesquisar por nome ou NCM..."
@@ -528,9 +586,7 @@ export default function Defensivos() {
               >
                 <option value="">Selecione o defensivo...</option>
                 {rows.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.nome}
-                  </option>
+                  <option key={r.id} value={r.id}>{r.nome}</option>
                 ))}
               </select>
 
@@ -635,8 +691,7 @@ export default function Defensivos() {
                   <tr>
                     <td className="p-4 text-center" colSpan={8}>
                       <span className="inline-flex items-center gap-2 text-slate-600">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Carregando saídas…
+                        <Loader2 className="h-4 w-4 animate-spin" /> Carregando saídas…
                       </span>
                     </td>
                   </tr>
@@ -664,6 +719,119 @@ export default function Defensivos() {
                       </td>
                       <td className="p-2">{m.maquina || "—"}</td>
                       <td className="p-2">{m.operador || "—"}</td>
+                      <td className="p-2">{m.observacoes || "—"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* ======= Aba INVENTÁRIO ======= */}
+      {subTab === "Inventário" && (
+        <>
+          <div className="bg-white p-4 rounded-lg shadow space-y-3">
+            <h3 className="font-semibold">Ajuste de inventário (contagem)</h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <select
+                className="border rounded px-3 py-2"
+                value={inv.defensivo_id}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setInvField("defensivo_id", id);
+                  const r = rows.find((x) => x.id === Number(id));
+                  if (r && !inv.unidade) setInvField("unidade", r.unidade || "");
+                }}
+              >
+                <option value="">Selecione o defensivo...</option>
+                {rows.map((r) => (
+                  <option key={r.id} value={r.id}>{r.nome}</option>
+                ))}
+              </select>
+
+              <input
+                className="border rounded px-3 py-2"
+                placeholder="Contagem (quantidade total)"
+                type="number"
+                value={inv.contagem}
+                onChange={(e) => setInvField("contagem", e.target.value)}
+              />
+
+              <input
+                className="border rounded px-3 py-2"
+                placeholder="Unidade (ex: L, KG)"
+                value={inv.unidade}
+                onChange={(e) => setInvField("unidade", e.target.value.toUpperCase())}
+              />
+            </div>
+
+            {/* Mostra estoque atual do selecionado */}
+            {inv.defensivo_id ? (
+              <div className="text-sm text-slate-600">
+                Estoque atual:{" "}
+                <b>
+                  {Number(rows.find((r) => r.id === Number(inv.defensivo_id))?.estoque || 0)}{" "}
+                  {rows.find((r) => r.id === Number(inv.defensivo_id))?.unidade || ""}
+                </b>
+              </div>
+            ) : null}
+
+            <textarea
+              className="border rounded px-3 py-2 w-full"
+              rows={3}
+              placeholder="Observações (opcional)"
+              value={inv.observacoes}
+              onChange={(e) => setInvField("observacoes", e.target.value)}
+            />
+
+            <div className="flex justify-end">
+              <button
+                onClick={registrarInventario}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+              >
+                Registrar Ajuste
+              </button>
+            </div>
+          </div>
+
+          {/* Histórico de AJUSTES */}
+          <div className="overflow-x-auto rounded-lg shadow">
+            <table className="w-full bg-white">
+              <thead className="bg-slate-100">
+                <tr>
+                  <th className="p-2 text-left">Data</th>
+                  <th className="p-2 text-left">Defensivo</th>
+                  <th className="p-2 text-left">Ajuste</th>
+                  <th className="p-2 text-left">Obs.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingAjustes ? (
+                  <tr>
+                    <td className="p-4 text-center" colSpan={4}>
+                      <span className="inline-flex items-center gap-2 text-slate-600">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Carregando ajustes…
+                      </span>
+                    </td>
+                  </tr>
+                ) : ajustes.length === 0 ? (
+                  <tr>
+                    <td className="p-4 text-center text-slate-500" colSpan={4}>
+                      Nenhum ajuste registrado.
+                    </td>
+                  </tr>
+                ) : (
+                  ajustes.map((m) => (
+                    <tr key={m.id} className="border-t">
+                      <td className="p-2">{new Date(m.created_at).toLocaleString()}</td>
+                      <td className="p-2">{m.defensivo?.nome || "—"}</td>
+                      <td className={`p-2 ${m.tipo === "Entrada" ? "text-green-700" : "text-red-700"}`}>
+                        {m.tipo === "Entrada" ? "+" : "-"} {m.quantidade} {m.unidade || ""}
+                      </td>
                       <td className="p-2">{m.observacoes || "—"}</td>
                     </tr>
                   ))
