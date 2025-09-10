@@ -50,7 +50,7 @@ export default function Defensivos() {
   });
   const setS = (k, v) => setSaida((s) => ({ ...s, [k]: v }));
 
-  // Carrega lista (da VIEW de estoque)
+  // Carrega lista (da VIEW de estoque) – usamos para preencher o select da Saída
   const fetchList = async () => {
     setLoading(true);
     try {
@@ -72,6 +72,11 @@ export default function Defensivos() {
   useEffect(() => {
     fetchList();
   }, []);
+
+  // Quando trocar para "Saída", limpamos qualquer prévia de NF (para não confundir)
+  useEffect(() => {
+    if (subTab === "Saída") setPreview(null);
+  }, [subTab]);
 
   // ====== Parse do(s) XML ======
   const handlePickXML = async (ev) => {
@@ -235,7 +240,7 @@ export default function Defensivos() {
       if (!defensivo_id) return alert("Selecione o defensivo.");
       if (!quantidade || quantidade <= 0) return alert("Informe uma quantidade válida.");
 
-      // valida estoque (se disponível)
+      // valida estoque (sem exibir na tela)
       const row = rows.find((r) => r.id === defensivo_id);
       if (row && Number(row.estoque || 0) < quantidade) {
         return alert("Estoque insuficiente para essa saída.");
@@ -290,7 +295,7 @@ export default function Defensivos() {
     }
   };
 
-  // ====== Filtro local da lista ======
+  // ====== Filtro local da lista (usado apenas na aba Entrada) ======
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return rows;
@@ -320,101 +325,167 @@ export default function Defensivos() {
 
       {/* ======= Aba ENTRADA ======= */}
       {subTab === "Entrada" && (
-        <div className="bg-white p-4 rounded-lg shadow flex flex-col gap-3">
-          <label className="font-semibold flex items-center gap-2">
-            <Upload className="h-4 w-4" />
-            Importar NF-e (XML)
-          </label>
+        <>
+          <div className="bg-white p-4 rounded-lg shadow flex flex-col gap-3">
+            <label className="font-semibold flex items-center gap-2">
+              <Upload className="h-4 w-4" />
+              Importar NF-e (XML)
+            </label>
+            <input
+              type="file"
+              accept=".xml"
+              multiple
+              onChange={handlePickXML}
+              className="border rounded px-3 py-2"
+            />
+
+            {/* Pré-visualização */}
+            {preview?.itens?.length ? (
+              <div className="mt-3 border rounded-lg overflow-hidden">
+                <div className="px-3 py-2 bg-slate-50 flex items-center justify-between text-sm">
+                  <div>
+                    <span className="mr-4">
+                      NF: <b>{preview.nf || "—"}</b>
+                    </span>
+                    <span>
+                      Fornecedor: <b>{preview.fornecedor || "—"}</b>
+                    </span>
+                  </div>
+                  <button
+                    disabled={busyImport}
+                    onClick={lancarEntradas}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
+                  >
+                    {busyImport ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Lançando…
+                      </span>
+                    ) : (
+                      "Lançar Entradas"
+                    )}
+                  </button>
+                </div>
+
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="p-2 text-left">Nome</th>
+                      <th className="p-2 text-left">NCM</th>
+                      <th className="p-2 text-left">Unid.</th>
+                      <th className="p-2 text-left">Quantidade</th>
+                      <th className="p-2 text-left">Tipo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.itens.map((it, idx) => (
+                      <tr key={idx} className="border-t">
+                        <td className="p-2">{it.nome}</td>
+                        <td className="p-2">{it.ncm || "—"}</td>
+                        <td className="p-2">{it.unidade || "—"}</td>
+                        <td className="p-2">{it.quantidade}</td>
+                        <td className="p-2">
+                          <select
+                            className="border rounded px-2 py-1"
+                            value={it.tipo}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setPreview((s) => {
+                                const clone = { ...s };
+                                clone.itens = s.itens.map((x, i) =>
+                                  i === idx ? { ...x, tipo: v } : x
+                                );
+                                return clone;
+                              });
+                            }}
+                          >
+                            {[
+                              "Herbicida",
+                              "Fungicida",
+                              "Inseticida",
+                              "Acaricida",
+                              "Nematicida",
+                              "Adjuvante",
+                              "Fertilizante",
+                              "Outro",
+                            ].map((t) => (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Busca + Lista (só na aba ENTRADA) */}
           <input
-            type="file"
-            accept=".xml"
-            multiple
-            onChange={handlePickXML}
-            className="border rounded px-3 py-2"
+            className="border rounded px-3 py-2 w-full mt-2"
+            placeholder="Pesquisar por nome ou NCM..."
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
           />
 
-          {/* Pré-visualização */}
-          {preview?.itens?.length ? (
-            <div className="mt-3 border rounded-lg overflow-hidden">
-              <div className="px-3 py-2 bg-slate-50 flex items-center justify-between text-sm">
-                <div>
-                  <span className="mr-4">
-                    NF: <b>{preview.nf || "—"}</b>
-                  </span>
-                  <span>
-                    Fornecedor: <b>{preview.fornecedor || "—"}</b>
-                  </span>
-                </div>
-                <button
-                  disabled={busyImport}
-                  onClick={lancarEntradas}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
-                >
-                  {busyImport ? (
-                    <span className="inline-flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Lançando…
-                    </span>
-                  ) : (
-                    "Lançar Entradas"
-                  )}
-                </button>
-              </div>
-
-              <table className="w-full text-sm">
-                <thead className="bg-slate-100">
+          <div className="overflow-x-auto rounded-lg shadow">
+            <table className="w-full bg-white">
+              <thead className="bg-slate-100">
+                <tr>
+                  <th className="p-2 text-left">Nome</th>
+                  <th className="p-2 text-left">NCM</th>
+                  <th className="p-2 text-left">Tipo</th>
+                  <th className="p-2 text-left">Unidade</th>
+                  <th className="p-2 text-center">Qtd.</th>
+                  <th className="p-2 text-left">Localização</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
                   <tr>
-                    <th className="p-2 text-left">Nome</th>
-                    <th className="p-2 text-left">NCM</th>
-                    <th className="p-2 text-left">Unid.</th>
-                    <th className="p-2 text-left">Quantidade</th>
-                    <th className="p-2 text-left">Tipo</th>
+                    <td className="p-4 text-center" colSpan={6}>
+                      <span className="inline-flex items-center gap-2 text-slate-600">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Carregando…
+                      </span>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {preview.itens.map((it, idx) => (
-                    <tr key={idx} className="border-t">
-                      <td className="p-2">{it.nome}</td>
-                      <td className="p-2">{it.ncm || "—"}</td>
-                      <td className="p-2">{it.unidade || "—"}</td>
-                      <td className="p-2">{it.quantidade}</td>
-                      <td className="p-2">
-                        <select
-                          className="border rounded px-2 py-1"
-                          value={it.tipo}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setPreview((s) => {
-                              const clone = { ...s };
-                              clone.itens = s.itens.map((x, i) =>
-                                i === idx ? { ...x, tipo: v } : x
-                              );
-                              return clone;
-                            });
-                          }}
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td className="p-4 text-center text-slate-500" colSpan={6}>
+                      Nenhum registro.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((r) => (
+                    <tr key={r.id} className="border-t">
+                      <td className="p-2">{r.nome}</td>
+                      <td className="p-2">{r.ncm || "—"}</td>
+                      <td className="p-2">{r.tipo || "—"}</td>
+                      <td className="p-2">{r.unidade || "—"}</td>
+                      <td className="p-2 text-center">
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            (Number(r.estoque) || 0) > 50
+                              ? "bg-green-100 text-green-700"
+                              : (Number(r.estoque) || 0) > 10
+                              ? "bg-yellow-100 text-yellow-700"
+                              : "bg-red-100 text-red-700"
+                          }`}
                         >
-                          {[
-                            "Herbicida",
-                            "Fungicida",
-                            "Inseticida",
-                            "Acaricida",
-                            "Nematicida",
-                            "Adjuvante",
-                            "Fertilizante",
-                            "Outro",
-                          ].map((t) => (
-                            <option key={t} value={t}>
-                              {t}
-                            </option>
-                          ))}
-                        </select>
+                          {Number(r.estoque || 0)}
+                        </span>
                       </td>
+                      <td className="p-2">{r.localizacao || "—"}</td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-        </div>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {/* ======= Aba SAÍDA ======= */}
@@ -522,71 +593,6 @@ export default function Defensivos() {
           </div>
         </div>
       )}
-
-      {/* Busca */}
-      <input
-        className="border rounded px-3 py-2 w-full"
-        placeholder="Pesquisar por nome ou NCM..."
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-      />
-
-      {/* Lista de defensivos */}
-      <div className="overflow-x-auto rounded-lg shadow">
-        <table className="w-full bg-white">
-          <thead className="bg-slate-100">
-            <tr>
-              <th className="p-2 text-left">Nome</th>
-              <th className="p-2 text-left">NCM</th>
-              <th className="p-2 text-left">Tipo</th>
-              <th className="p-2 text-left">Unidade</th>
-              <th className="p-2 text-center">Qtd.</th>
-              <th className="p-2 text-left">Localização</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td className="p-4 text-center" colSpan={6}>
-                  <span className="inline-flex items-center gap-2 text-slate-600">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Carregando…
-                  </span>
-                </td>
-              </tr>
-            ) : filtered.length === 0 ? (
-              <tr>
-                <td className="p-4 text-center text-slate-500" colSpan={6}>
-                  Nenhum registro.
-                </td>
-              </tr>
-            ) : (
-              filtered.map((r) => (
-                <tr key={r.id} className="border-t">
-                  <td className="p-2">{r.nome}</td>
-                  <td className="p-2">{r.ncm || "—"}</td>
-                  <td className="p-2">{r.tipo || "—"}</td>
-                  <td className="p-2">{r.unidade || "—"}</td>
-                  <td className="p-2 text-center">
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        (Number(r.estoque) || 0) > 50
-                          ? "bg-green-100 text-green-700"
-                          : (Number(r.estoque) || 0) > 10
-                          ? "bg-yellow-100 text-yellow-700"
-                          : "bg-red-100 text-red-700"
-                      }`}
-                    >
-                      {Number(r.estoque || 0)}
-                    </span>
-                  </td>
-                  <td className="p-2">{r.localizacao || "—"}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }
