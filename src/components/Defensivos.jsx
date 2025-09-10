@@ -21,8 +21,33 @@ function mapTipoByNcm(ncm) {
   return NCM_TO_TIPO[k] || "Outro";
 }
 
+/* helpers de data */
+function fmtDate(d) {
+  try {
+    return new Date(d).toLocaleString("pt-BR");
+  } catch {
+    return d || "";
+  }
+}
+function isoDate(d) {
+  const dt = new Date(d);
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const day = String(dt.getDate()).padStart(2, "0");
+  return `${dt.getFullYear()}-${m}-${day}`;
+}
+function mondayOfThisWeek() {
+  const d = new Date();
+  const day = d.getDay(); // 0=dom,...6=sab
+  const diff = (day === 0 ? -6 : 1) - day; // volta pro Monday
+  d.setDate(d.getDate() + diff);
+  return isoDate(d);
+}
+function todayISO() {
+  return isoDate(new Date());
+}
+
 export default function Defensivos() {
-  const [rows, setRows] = useState([]);              // defensivos + estoque (para selects)
+  const [rows, setRows] = useState([]);              // defensivos + estoque
   const [q, setQ] = useState("");                    // busca (aba Entrada)
   const [loading, setLoading] = useState(false);
 
@@ -63,6 +88,11 @@ export default function Defensivos() {
   const [ajustes, setAjustes] = useState([]);        // histórico de ajustes
   const [loadingAjustes, setLoadingAjustes] = useState(false);
 
+  // ====== PDF Entradas (filtro) ======
+  const [pdfFrom, setPdfFrom] = useState(mondayOfThisWeek());
+  const [pdfTo, setPdfTo] = useState(todayISO());
+  const [pdfBusy, setPdfBusy] = useState(false);
+
   // -------- Carrega lista de defensivos (view de estoque) --------
   const fetchList = async () => {
     setLoading(true);
@@ -86,7 +116,6 @@ export default function Defensivos() {
   const fetchSaidas = async () => {
     setLoadingSaidas(true);
     try {
-      // troque o nome do relacionamento se no seu schema for outro
       const rel = "defensivo_movimentacoes_defensivo_id_fkey";
       const { data, error } = await supabase
         .from("defensivo_movimentacoes")
@@ -100,7 +129,6 @@ export default function Defensivos() {
         .eq("tipo", "Saida")
         .order("created_at", { ascending: false })
         .limit(200);
-
       if (error) throw error;
       setSaidas(data || []);
     } catch (err) {
@@ -127,7 +155,6 @@ export default function Defensivos() {
         .eq("origem", "Inventário")
         .order("created_at", { ascending: false })
         .limit(200);
-
       if (error) throw error;
       setAjustes(data || []);
     } catch (err) {
@@ -139,7 +166,6 @@ export default function Defensivos() {
   };
 
   useEffect(() => { fetchList(); }, []);
-
   useEffect(() => {
     if (subTab === "Saída") fetchSaidas();
     if (subTab === "Inventário") fetchAjustes();
@@ -202,7 +228,7 @@ export default function Defensivos() {
     }
   };
 
-  // ====== Lançar ENTRADAS ======
+  // ====== Lançar ENTRADAS a partir do preview ======
   const lancarEntradas = async () => {
     if (!preview?.itens?.length) return;
 
@@ -219,7 +245,6 @@ export default function Defensivos() {
         .from("defensivos")
         .upsert(upserts, { onConflict: "nome" })
         .select("id, nome");
-
       if (upErr) throw upErr;
 
       const idByName = new Map(upserted.map((d) => [d.nome, d.id]));
@@ -390,6 +415,85 @@ export default function Defensivos() {
     }
   };
 
+  // ====== Gerar PDF de ENTRADAS ======
+  const gerarPdfEntradas = async () => {
+    try {
+      setPdfBusy(true);
+
+      // busca as entradas no período escolhido
+      const fromIso = new Date(`${pdfFrom}T00:00:00.000Z`).toISOString();
+      const toDate = new Date(`${pdfTo}T23:59:59.999Z`);
+      const toIso = toDate.toISOString();
+
+      const rel = "defensivo_movimentacoes_defensivo_id_fkey";
+      const { data, error } = await supabase
+        .from("defensivo_movimentacoes")
+        .select(
+          `
+          created_at, nf_numero, fornecedor, quantidade, unidade, lote, validade, fabricacao,
+          defensivo:defensivos!${rel} ( nome )
+        `
+        )
+        .eq("tipo", "Entrada")
+        .gte("created_at", fromIso)
+        .lte("created_at", toIso)
+        .order("created_at", { ascending: true })
+        .limit(5000);
+
+      if (error) throw error;
+
+      // carrega libs (dinâmico pra não quebrar build)
+      let jsPDF, autoTable;
+      try {
+        ({ jsPDF } = await import("jspdf"));
+        autoTable = (await import("jspdf-autotable")).default;
+      } catch {
+        alert(
+          'Para gerar PDF automaticamente, instale as dependências:\n\nnpm i jspdf jspdf-autotable'
+        );
+        return;
+      }
+
+      const doc = new jsPDF({ orientation: "landscape" });
+
+      doc.setFontSize(14);
+      doc.text("Relatório de Entradas de Defensivos", 14, 14);
+      doc.setFontSize(10);
+      doc.text(`Período: ${pdfFrom} até ${pdfTo}`, 14, 20);
+
+      const head = [
+        ["Data", "NF", "Fornecedor", "Produto", "Qtd", "Unid.", "Lote", "Validade", "Fabricação"],
+      ];
+      const body = (data || []).map((r) => [
+        fmtDate(r.created_at),
+        r.nf_numero || "",
+        r.fornecedor || "",
+        r.defensivo?.nome || "",
+        r.quantidade ?? "",
+        r.unidade || "",
+        r.lote || "",
+        r.validade || "",
+        r.fabricacao || "",
+      ]);
+
+      autoTable(doc, {
+        head,
+        body,
+        startY: 26,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [30, 64, 175] }, // azul
+        columnStyles: { 4: { halign: "right" } },
+      });
+
+      doc.save(`Entradas_Defensivos_${pdfFrom}_a_${pdfTo}.pdf`);
+    } catch (err) {
+      console.error("Falha ao gerar PDF:", err);
+      alert("Falha ao gerar PDF de entradas.");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
   // ====== Filtro local da lista (apenas para a aba Entrada) ======
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -433,6 +537,42 @@ export default function Defensivos() {
               onChange={handlePickXML}
               className="border rounded px-3 py-2"
             />
+
+            {/* Filtro e botão de PDF */}
+            <div className="flex flex-col md:flex-row gap-3 md:items-end">
+              <div>
+                <label className="text-sm text-slate-600">De</label>
+                <input
+                  type="date"
+                  className="border rounded px-3 py-2 w-full"
+                  value={pdfFrom}
+                  onChange={(e) => setPdfFrom(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm text-slate-600">Até</label>
+                <input
+                  type="date"
+                  className="border rounded px-3 py-2 w-full"
+                  value={pdfTo}
+                  onChange={(e) => setPdfTo(e.target.value)}
+                />
+              </div>
+              <button
+                onClick={gerarPdfEntradas}
+                disabled={pdfBusy}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded disabled:opacity-60"
+              >
+                {pdfBusy ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Gerando PDF…
+                  </span>
+                ) : (
+                  "Gerar PDF (Entradas)"
+                )}
+              </button>
+            </div>
 
             {preview?.itens?.length ? (
               <div className="mt-3 border rounded-lg overflow-hidden">
@@ -768,7 +908,6 @@ export default function Defensivos() {
               />
             </div>
 
-            {/* Mostra estoque atual do selecionado */}
             {inv.defensivo_id ? (
               <div className="text-sm text-slate-600">
                 Estoque atual:{" "}
