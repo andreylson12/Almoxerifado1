@@ -28,7 +28,7 @@ export default function Defensivos() {
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // sub-abas internas desta tela
+  // sub-abas
   const [subTab, setSubTab] = useState("Entrada"); // "Entrada" | "Saída"
 
   // ====== XML / Pré-visualização de NF-e ======
@@ -50,7 +50,38 @@ export default function Defensivos() {
   });
   const setS = (k, v) => setSaida((s) => ({ ...s, [k]: v }));
 
-  // Carrega lista (da VIEW de estoque) – usamos para preencher o select da Saída
+  // ====== Lista de saídas (para a tabela abaixo do formulário) ======
+  const [saidas, setSaidas] = useState([]);
+  const [saidasLoading, setSaidasLoading] = useState(false);
+
+  const fetchSaidas = async () => {
+    try {
+      setSaidasLoading(true);
+      const { data, error } = await supabase
+        .from("defensivo_movimentacoes")
+        .select(
+          `
+            id, created_at, data_aplicacao, aplicacao, talhao, area_ha, maquina, operador, observacoes,
+            quantidade, unidade,
+            defensivos ( nome )
+          `
+        )
+        .eq("tipo", "Saida")
+        .order("data_aplicacao", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+      setSaidas(data || []);
+    } catch (err) {
+      console.error("Falha ao carregar saídas:", err);
+      alert("Falha ao carregar saídas.");
+    } finally {
+      setSaidasLoading(false);
+    }
+  };
+
+  // Carrega estoque (view)
   const fetchList = async () => {
     setLoading(true);
     try {
@@ -73,9 +104,9 @@ export default function Defensivos() {
     fetchList();
   }, []);
 
-  // Quando trocar para "Saída", limpamos qualquer prévia de NF (para não confundir)
+  // Quando mudar para a aba "Saída", carrega a tabela de saídas
   useEffect(() => {
-    if (subTab === "Saída") setPreview(null);
+    if (subTab === "Saída") fetchSaidas();
   }, [subTab]);
 
   // ====== Parse do(s) XML ======
@@ -102,7 +133,6 @@ export default function Defensivos() {
 
           const nome = (prod.querySelector("xProd")?.textContent || "").trim();
           const ncm = (prod.querySelector("NCM")?.textContent || "").trim();
-          // unidade pode vir "LT" -> normaliza para "L"
           let unidade = (prod.querySelector("uCom")?.textContent || "").trim().toUpperCase();
           if (unidade === "LT") unidade = "L";
 
@@ -110,7 +140,6 @@ export default function Defensivos() {
             toNumber(prod.querySelector("qCom")?.textContent) ||
             toNumber(prod.querySelector("qTrib")?.textContent);
 
-          // lotes (opcional)
           const lotes = Array.from(det.querySelectorAll("rastro")).map((r) => ({
             lote: (r.querySelector("nLote")?.textContent || "").trim(),
             qLote: toNumber(r.querySelector("qLote")?.textContent),
@@ -129,11 +158,7 @@ export default function Defensivos() {
         });
       }
 
-      setPreview({
-        nf,
-        fornecedor,
-        itens: allItems,
-      });
+      setPreview({ nf, fornecedor, itens: allItems });
     } catch (err) {
       console.error(err);
       alert("Falha ao importar NF.");
@@ -147,7 +172,6 @@ export default function Defensivos() {
 
     setBusyImport(true);
     try {
-      // 1) UPSERT dos defensivos por nome
       const upserts = preview.itens.map((it) => ({
         nome: it.nome,
         ncm: it.ncm || null,
@@ -164,7 +188,6 @@ export default function Defensivos() {
 
       const idByName = new Map(upserted.map((d) => [d.nome, d.id]));
 
-      // 2) Monta movimentações (Entrada)
       const movimentos = [];
       for (const it of preview.itens) {
         const defensivo_id = idByName.get(it.nome);
@@ -208,12 +231,8 @@ export default function Defensivos() {
         if (movErr) throw movErr;
       }
 
-      // 3) Recalcula estoque (se função existir)
-      try {
-        await supabase.rpc("recalcular_estoque_defensivos");
-      } catch (_) {
-        /* ignora se a função não existir */
-      }
+      // Recalcula estoque (ignora erro se não existir)
+      try { await supabase.rpc("recalcular_estoque_defensivos"); } catch {}
 
       setPreview(null);
       fetchList();
@@ -227,11 +246,6 @@ export default function Defensivos() {
   };
 
   // ====== Saída (abate + grava p/ relatório) ======
-  const selectedRow = useMemo(
-    () => rows.find((r) => r.id === Number(saida.defensivo_id)),
-    [rows, saida.defensivo_id]
-  );
-
   const registrarSaida = async () => {
     try {
       const defensivo_id = Number(saida.defensivo_id);
@@ -240,7 +254,6 @@ export default function Defensivos() {
       if (!defensivo_id) return alert("Selecione o defensivo.");
       if (!quantidade || quantidade <= 0) return alert("Informe uma quantidade válida.");
 
-      // valida estoque (sem exibir na tela)
       const row = rows.find((r) => r.id === defensivo_id);
       if (row && Number(row.estoque || 0) < quantidade) {
         return alert("Estoque insuficiente para essa saída.");
@@ -250,7 +263,7 @@ export default function Defensivos() {
         tipo: "Saida",
         defensivo_id,
         quantidade,
-        unidade: saida.unidade || selectedRow?.unidade || null,
+        unidade: saida.unidade || row?.unidade || null,
         origem: "Aplicação",
         aplicacao: saida.aplicacao || null,
         data_aplicacao: saida.data_aplicacao || null,
@@ -266,13 +279,9 @@ export default function Defensivos() {
         .insert([payload]);
       if (error) throw error;
 
-      // recalcula/atualiza estoque (se tiver a função)
-      try {
-        await supabase.rpc("recalcular_estoque_defensivos");
-      } catch (_) {
-        /* ignora se a função não existir */
-      }
-      await fetchList();
+      try { await supabase.rpc("recalcular_estoque_defensivos"); } catch {}
+      await fetchList();      // atualiza estoque
+      await fetchSaidas();    // atualiza a tabela de saídas
 
       // limpa os campos
       setSaida({
@@ -295,7 +304,7 @@ export default function Defensivos() {
     }
   };
 
-  // ====== Filtro local da lista (usado apenas na aba Entrada) ======
+  // ====== Filtro local da lista (estoque) ======
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return rows;
@@ -325,172 +334,99 @@ export default function Defensivos() {
 
       {/* ======= Aba ENTRADA ======= */}
       {subTab === "Entrada" && (
-        <>
-          <div className="bg-white p-4 rounded-lg shadow flex flex-col gap-3">
-            <label className="font-semibold flex items-center gap-2">
-              <Upload className="h-4 w-4" />
-              Importar NF-e (XML)
-            </label>
-            <input
-              type="file"
-              accept=".xml"
-              multiple
-              onChange={handlePickXML}
-              className="border rounded px-3 py-2"
-            />
-
-            {/* Pré-visualização */}
-            {preview?.itens?.length ? (
-              <div className="mt-3 border rounded-lg overflow-hidden">
-                <div className="px-3 py-2 bg-slate-50 flex items-center justify-between text-sm">
-                  <div>
-                    <span className="mr-4">
-                      NF: <b>{preview.nf || "—"}</b>
-                    </span>
-                    <span>
-                      Fornecedor: <b>{preview.fornecedor || "—"}</b>
-                    </span>
-                  </div>
-                  <button
-                    disabled={busyImport}
-                    onClick={lancarEntradas}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
-                  >
-                    {busyImport ? (
-                      <span className="inline-flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" /> Lançando…
-                      </span>
-                    ) : (
-                      "Lançar Entradas"
-                    )}
-                  </button>
-                </div>
-
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-100">
-                    <tr>
-                      <th className="p-2 text-left">Nome</th>
-                      <th className="p-2 text-left">NCM</th>
-                      <th className="p-2 text-left">Unid.</th>
-                      <th className="p-2 text-left">Quantidade</th>
-                      <th className="p-2 text-left">Tipo</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {preview.itens.map((it, idx) => (
-                      <tr key={idx} className="border-t">
-                        <td className="p-2">{it.nome}</td>
-                        <td className="p-2">{it.ncm || "—"}</td>
-                        <td className="p-2">{it.unidade || "—"}</td>
-                        <td className="p-2">{it.quantidade}</td>
-                        <td className="p-2">
-                          <select
-                            className="border rounded px-2 py-1"
-                            value={it.tipo}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              setPreview((s) => {
-                                const clone = { ...s };
-                                clone.itens = s.itens.map((x, i) =>
-                                  i === idx ? { ...x, tipo: v } : x
-                                );
-                                return clone;
-                              });
-                            }}
-                          >
-                            {[
-                              "Herbicida",
-                              "Fungicida",
-                              "Inseticida",
-                              "Acaricida",
-                              "Nematicida",
-                              "Adjuvante",
-                              "Fertilizante",
-                              "Outro",
-                            ].map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-          </div>
-
-          {/* Busca + Lista (só na aba ENTRADA) */}
+        <div className="bg-white p-4 rounded-lg shadow flex flex-col gap-3">
+          <label className="font-semibold flex items-center gap-2">
+            <Upload className="h-4 w-4" />
+            Importar NF-e (XML)
+          </label>
           <input
-            className="border rounded px-3 py-2 w-full mt-2"
-            placeholder="Pesquisar por nome ou NCM..."
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
+            type="file"
+            accept=".xml"
+            multiple
+            onChange={handlePickXML}
+            className="border rounded px-3 py-2"
           />
 
-          <div className="overflow-x-auto rounded-lg shadow">
-            <table className="w-full bg-white">
-              <thead className="bg-slate-100">
-                <tr>
-                  <th className="p-2 text-left">Nome</th>
-                  <th className="p-2 text-left">NCM</th>
-                  <th className="p-2 text-left">Tipo</th>
-                  <th className="p-2 text-left">Unidade</th>
-                  <th className="p-2 text-center">Qtd.</th>
-                  <th className="p-2 text-left">Localização</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
+          {preview?.itens?.length ? (
+            <div className="mt-3 border rounded-lg overflow-hidden">
+              <div className="px-3 py-2 bg-slate-50 flex items-center justify-between text-sm">
+                <div>
+                  <span className="mr-4">NF: <b>{preview.nf || "—"}</b></span>
+                  <span>Fornecedor: <b>{preview.fornecedor || "—"}</b></span>
+                </div>
+                <button
+                  disabled={busyImport}
+                  onClick={lancarEntradas}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
+                >
+                  {busyImport ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Lançando…
+                    </span>
+                  ) : (
+                    "Lançar Entradas"
+                  )}
+                </button>
+              </div>
+
+              <table className="w-full text-sm">
+                <thead className="bg-slate-100">
                   <tr>
-                    <td className="p-4 text-center" colSpan={6}>
-                      <span className="inline-flex items-center gap-2 text-slate-600">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Carregando…
-                      </span>
-                    </td>
+                    <th className="p-2 text-left">Nome</th>
+                    <th className="p-2 text-left">NCM</th>
+                    <th className="p-2 text-left">Unid.</th>
+                    <th className="p-2 text-left">Quantidade</th>
+                    <th className="p-2 text-left">Tipo</th>
                   </tr>
-                ) : filtered.length === 0 ? (
-                  <tr>
-                    <td className="p-4 text-center text-slate-500" colSpan={6}>
-                      Nenhum registro.
-                    </td>
-                  </tr>
-                ) : (
-                  filtered.map((r) => (
-                    <tr key={r.id} className="border-t">
-                      <td className="p-2">{r.nome}</td>
-                      <td className="p-2">{r.ncm || "—"}</td>
-                      <td className="p-2">{r.tipo || "—"}</td>
-                      <td className="p-2">{r.unidade || "—"}</td>
-                      <td className="p-2 text-center">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            (Number(r.estoque) || 0) > 50
-                              ? "bg-green-100 text-green-700"
-                              : (Number(r.estoque) || 0) > 10
-                              ? "bg-yellow-100 text-yellow-700"
-                              : "bg-red-100 text-red-700"
-                          }`}
+                </thead>
+                <tbody>
+                  {preview.itens.map((it, idx) => (
+                    <tr key={idx} className="border-t">
+                      <td className="p-2">{it.nome}</td>
+                      <td className="p-2">{it.ncm || "—"}</td>
+                      <td className="p-2">{it.unidade || "—"}</td>
+                      <td className="p-2">{it.quantidade}</td>
+                      <td className="p-2">
+                        <select
+                          className="border rounded px-2 py-1"
+                          value={it.tipo}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setPreview((s) => {
+                              const clone = { ...s };
+                              clone.itens = s.itens.map((x, i) =>
+                                i === idx ? { ...x, tipo: v } : x
+                              );
+                              return clone;
+                            });
+                          }}
                         >
-                          {Number(r.estoque || 0)}
-                        </span>
+                          {[
+                            "Herbicida",
+                            "Fungicida",
+                            "Inseticida",
+                            "Acaricida",
+                            "Nematicida",
+                            "Adjuvante",
+                            "Fertilizante",
+                            "Outro",
+                          ].map((t) => (
+                            <option key={t} value={t}>{t}</option>
+                          ))}
+                        </select>
                       </td>
-                      <td className="p-2">{r.localizacao || "—"}</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </div>
       )}
 
       {/* ======= Aba SAÍDA ======= */}
       {subTab === "Saída" && (
-        <div className="bg-white p-4 rounded-lg shadow space-y-3">
+        <div className="bg-white p-4 rounded-lg shadow space-y-4">
           <h3 className="font-semibold">Saída rápida (abate estoque + registra)</h3>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -506,9 +442,7 @@ export default function Defensivos() {
             >
               <option value="">Selecione o defensivo...</option>
               {rows.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.nome}
-                </option>
+                <option key={r.id} value={r.id}>{r.nome}</option>
               ))}
             </select>
 
@@ -591,8 +525,130 @@ export default function Defensivos() {
               Registrar Saída
             </button>
           </div>
+
+          {/* === Tabela de saídas registradas === */}
+          <div className="overflow-x-auto rounded-lg shadow">
+            <table className="w-full bg-white text-sm">
+              <thead className="bg-slate-100">
+                <tr>
+                  <th className="p-2 text-left">Data</th>
+                  <th className="p-2 text-left">Defensivo</th>
+                  <th className="p-2 text-right">Qtd.</th>
+                  <th className="p-2 text-left">Unid.</th>
+                  <th className="p-2 text-left">Talhão/Área</th>
+                  <th className="p-2 text-left">Máquina</th>
+                  <th className="p-2 text-left">Operador</th>
+                  <th className="p-2 text-left">Aplicação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {saidasLoading ? (
+                  <tr>
+                    <td className="p-4 text-center" colSpan={8}>
+                      <span className="inline-flex items-center gap-2 text-slate-600">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Carregando saídas…
+                      </span>
+                    </td>
+                  </tr>
+                ) : saidas.length === 0 ? (
+                  <tr>
+                    <td className="p-4 text-center text-slate-500" colSpan={8}>
+                      Nenhuma saída registrada.
+                    </td>
+                  </tr>
+                ) : (
+                  saidas.map((m) => {
+                    const dataRef = m.data_aplicacao || m.created_at;
+                    const dataFmt = dataRef
+                      ? new Date(dataRef).toLocaleDateString()
+                      : "—";
+                    return (
+                      <tr key={m.id} className="border-t">
+                        <td className="p-2">{dataFmt}</td>
+                        <td className="p-2">{m.defensivos?.nome || "—"}</td>
+                        <td className="p-2 text-right">{Number(m.quantidade || 0)}</td>
+                        <td className="p-2">{m.unidade || "—"}</td>
+                        <td className="p-2">
+                          {m.talhao || "—"}
+                          {m.area_ha ? ` (${m.area_ha} ha)` : ""}
+                        </td>
+                        <td className="p-2">{m.maquina || "—"}</td>
+                        <td className="p-2">{m.operador || "—"}</td>
+                        <td className="p-2">{m.aplicacao || "—"}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
+
+      {/* Busca no estoque / lista de defensivos */}
+      <input
+        className="border rounded px-3 py-2 w-full"
+        placeholder="Pesquisar por nome ou NCM..."
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
+
+      <div className="overflow-x-auto rounded-lg shadow">
+        <table className="w-full bg-white">
+          <thead className="bg-slate-100">
+            <tr>
+              <th className="p-2 text-left">Nome</th>
+              <th className="p-2 text-left">NCM</th>
+              <th className="p-2 text-left">Tipo</th>
+              <th className="p-2 text-left">Unidade</th>
+              <th className="p-2 text-center">Qtd.</th>
+              <th className="p-2 text-left">Localização</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td className="p-4 text-center" colSpan={6}>
+                  <span className="inline-flex items-center gap-2 text-slate-600">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Carregando…
+                  </span>
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td className="p-4 text-center text-slate-500" colSpan={6}>
+                  Nenhum registro.
+                </td>
+              </tr>
+            ) : (
+              filtered.map((r) => (
+                <tr key={r.id} className="border-t">
+                  <td className="p-2">{r.nome}</td>
+                  <td className="p-2">{r.ncm || "—"}</td>
+                  <td className="p-2">{r.tipo || "—"}</td>
+                  <td className="p-2">{r.unidade || "—"}</td>
+                  <td className="p-2 text-center">
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                        (Number(r.estoque) || 0) > 50
+                          ? "bg-green-100 text-green-700"
+                          : (Number(r.estoque) || 0) > 10
+                          ? "bg-yellow-100 text-yellow-700"
+                          : "bg-red-100 text-red-700"
+                      }`}
+                    >
+                      {Number(r.estoque || 0)}
+                    </span>
+                  </td>
+                  <td className="p-2">{r.localizacao || "—"}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
