@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
-import { Upload, Loader2, FileSpreadsheet, MinusCircle } from "lucide-react";
+import { Upload, Loader2, MinusCircle } from "lucide-react";
 
 /** NCM -> Tipo (ajuste/expanda conforme sua necessidade) */
 const NCM_TO_TIPO = {
@@ -32,12 +32,19 @@ export default function Defensivos() {
   const [preview, setPreview] = useState(null);
   const [busyImport, setBusyImport] = useState(false);
 
-  // ===== Saída rápida =====
+  // ===== Saída rápida (com metadados p/ relatório) =====
   const [saida, setSaida] = useState({
     defensivo_id: "",
     quantidade: "",
     unidade: "",
     origem: "Aplicação",
+    destino: "Aplicação",
+    aplicacao_data: "",   // yyyy-mm-dd
+    talhao: "",
+    area_ha: "",
+    maquina: "",
+    operador: "",
+    observacao: "",
   });
   const setSaidaField = (k, v) => setSaida((s) => ({ ...s, [k]: v }));
 
@@ -142,7 +149,6 @@ export default function Defensivos() {
         unidade: it.unidade || null,
       }));
 
-      // upsert por nome (garanta unique constraint em nome **ou** troque para outro campo)
       const { data: upserted, error: upErr } = await supabase
         .from("defensivos")
         .upsert(upserts, { onConflict: "nome" })
@@ -150,16 +156,15 @@ export default function Defensivos() {
 
       if (upErr) throw upErr;
 
-      // cria um mapa nome -> id
+      // mapa nome -> id
       const idByName = new Map(upserted.map((d) => [d.nome, d.id]));
 
-      // 2) Monta movimentações (Entrada)
+      // 2) Movimentações (Entrada)
       const movimentos = [];
       for (const it of preview.itens) {
         const defensivo_id = idByName.get(it.nome);
         if (!defensivo_id) continue;
 
-        // se existirem lotes, cria 1 mov por lote; senão, 1 mov único
         if (it.lotes?.length) {
           for (const l of it.lotes) {
             movimentos.push({
@@ -198,14 +203,11 @@ export default function Defensivos() {
         if (movErr) throw movErr;
       }
 
-      // 3) (Opcional) recalcular via função, se existir
+      // (Opcional) recalcular via função, se existir
       try {
         await supabase.rpc("recalcular_estoque_defensivos");
-      } catch (_) {
-        /* ignora se não existir */
-      }
+      } catch (_) {}
 
-      // 4) limpa preview e recarrega lista
       setPreview(null);
       fetchList();
       alert("Entradas lançadas com sucesso.");
@@ -217,7 +219,7 @@ export default function Defensivos() {
     }
   };
 
-  // ====== Registrar Saída (abate estoque) ======
+  // ====== Registrar Saída (abate estoque + salva metadados p/ relatório) ======
   const registrarSaida = async () => {
     try {
       const id = Number(saida.defensivo_id || 0);
@@ -242,6 +244,13 @@ export default function Defensivos() {
         quantidade: qtd,
         unidade,
         origem: saida.origem || "Aplicação",
+        destino: saida.destino || "Aplicação",
+        aplicacao_data: saida.aplicacao_data || null,
+        talhao: saida.talhao || null,
+        area_ha: saida.area_ha ? Number(saida.area_ha) : null,
+        maquina: saida.maquina || null,
+        operador: saida.operador || null,
+        observacao: saida.observacao || null,
       };
 
       const { error } = await supabase
@@ -249,14 +258,24 @@ export default function Defensivos() {
         .insert([payload]);
       if (error) throw error;
 
-      // (Opcional) chamar função de recalcular, se houver
       try {
         await supabase.rpc("recalcular_estoque_defensivos");
       } catch (_) {}
 
-      // atualizar lista e limpar form
       await fetchList();
-      setSaida({ defensivo_id: "", quantidade: "", unidade: "", origem: "Aplicação" });
+      setSaida({
+        defensivo_id: "",
+        quantidade: "",
+        unidade: "",
+        origem: "Aplicação",
+        destino: "Aplicação",
+        aplicacao_data: "",
+        talhao: "",
+        area_ha: "",
+        maquina: "",
+        operador: "",
+        observacao: "",
+      });
       alert("Saída registrada com sucesso.");
     } catch (err) {
       console.error(err);
@@ -374,8 +393,9 @@ export default function Defensivos() {
       <div className="bg-white p-4 rounded-lg shadow space-y-3">
         <h3 className="font-semibold flex items-center gap-2">
           <MinusCircle className="h-4 w-4 text-red-600" />
-          Saída rápida (abate estoque)
+          Saída rápida (abate estoque + registra para relatório)
         </h3>
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <select
             className="border rounded px-3 py-2"
@@ -415,13 +435,59 @@ export default function Defensivos() {
             onChange={(e) => setSaidaField("unidade", e.target.value)}
           />
 
+          <select
+            className="border rounded px-3 py-2"
+            value={saida.destino}
+            onChange={(e) => setSaidaField("destino", e.target.value)}
+          >
+            {["Aplicação", "Transferência", "Perda"].map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <input
+            type="date"
+            className="border rounded px-3 py-2"
+            value={saida.aplicacao_data}
+            onChange={(e) => setSaidaField("aplicacao_data", e.target.value)}
+          />
           <input
             className="border rounded px-3 py-2"
-            placeholder="Origem/Destino (ex: Aplicação)"
-            value={saida.origem}
-            onChange={(e) => setSaidaField("origem", e.target.value)}
+            placeholder="Talhão/Área"
+            value={saida.talhao}
+            onChange={(e) => setSaidaField("talhao", e.target.value)}
+          />
+          <input
+            type="number"
+            step="0.01"
+            className="border rounded px-3 py-2"
+            placeholder="Área (ha)"
+            value={saida.area_ha}
+            onChange={(e) => setSaidaField("area_ha", e.target.value)}
+          />
+          <input
+            className="border rounded px-3 py-2"
+            placeholder="Máquina"
+            value={saida.maquina}
+            onChange={(e) => setSaidaField("maquina", e.target.value)}
+          />
+          <input
+            className="border rounded px-3 py-2"
+            placeholder="Operador/Funcionário"
+            value={saida.operador}
+            onChange={(e) => setSaidaField("operador", e.target.value)}
           />
         </div>
+
+        <textarea
+          className="border rounded px-3 py-2 w-full"
+          placeholder="Observações"
+          rows={2}
+          value={saida.observacao}
+          onChange={(e) => setSaidaField("observacao", e.target.value)}
+        />
 
         <div className="flex justify-end">
           <button
