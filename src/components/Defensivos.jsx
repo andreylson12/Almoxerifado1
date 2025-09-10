@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
-import { Upload, Loader2, FileSpreadsheet } from "lucide-react";
+import { Upload, Loader2 } from "lucide-react";
 
-/** NCM -> Tipo (ajuste/expanda conforme sua necessidade) */
+/** NCM -> Tipo (expanda conforme necessário) */
 const NCM_TO_TIPO = {
   "38089993": "Acaricida",
   "38089199": "Inseticida",
@@ -10,7 +10,6 @@ const NCM_TO_TIPO = {
   "29155010": "Adjuvante",
   "31052000": "Fertilizante",
   "34029029": "Adjuvante",
-  // fallback: Outro
 };
 
 function toNumber(s) {
@@ -79,11 +78,15 @@ export default function Defensivos() {
 
           const nome = (prod.querySelector("xProd")?.textContent || "").trim();
           const ncm = (prod.querySelector("NCM")?.textContent || "").trim();
+
           // unidade do XML pode vir 'LT', 'L', etc
           let unidade = (prod.querySelector("uCom")?.textContent || "").trim().toUpperCase();
           if (unidade === "LT") unidade = "L";
-          // quantidade
-          const quantidade = toNumber(prod.querySelector("qCom")?.textContent ?? prod.querySelector("qTrib")?.textContent);
+
+          // quantidade: prioriza qCom, cai para qTrib
+          const quantidade =
+            toNumber(prod.querySelector("qCom")?.textContent) ||
+            toNumber(prod.querySelector("qTrib")?.textContent);
 
           // Lotes / rastro (opcional)
           const lotes = Array.from(det.querySelectorAll("rastro")).map((r) => ({
@@ -130,7 +133,6 @@ export default function Defensivos() {
         unidade: it.unidade || null,
       }));
 
-      // upsert por nome (garanta unique constraint em nome **ou** troque para outro campo)
       const { data: upserted, error: upErr } = await supabase
         .from("defensivos")
         .upsert(upserts, { onConflict: "nome" })
@@ -138,7 +140,7 @@ export default function Defensivos() {
 
       if (upErr) throw upErr;
 
-      // cria um mapa nome -> id
+      // mapa nome -> id
       const idByName = new Map(upserted.map((d) => [d.nome, d.id]));
 
       // 2) Monta movimentações (Entrada)
@@ -147,13 +149,13 @@ export default function Defensivos() {
         const defensivo_id = idByName.get(it.nome);
         if (!defensivo_id) continue;
 
-        // se existirem lotes, cria 1 mov por lote; senão, 1 mov único
         if (it.lotes?.length) {
           for (const l of it.lotes) {
+            const qtd = l.qLote || it.quantidade || 0;
             movimentos.push({
               tipo: "Entrada",
               defensivo_id,
-              quantidade: l.qLote || it.quantidade || 0,
+              quantidade: qtd,
               unidade: it.unidade,
               origem: "NF-e",
               nf_numero: preview.nf || null,
@@ -186,9 +188,12 @@ export default function Defensivos() {
         if (movErr) throw movErr;
       }
 
-      // 3) (Opcional) sincroniza coluna 'quantidade'
-      // ignore erro se função não existir
-      await supabase.rpc("recalcular_estoque_defensivos").catch(() => {});
+      // 3) (Opcional) recalcula estoque — sem usar .catch()
+      const { error: rpcErr } = await supabase.rpc("recalcular_estoque_defensivos");
+      if (rpcErr) {
+        // apenas loga; não bloqueia o fluxo
+        console.warn("RPC recalcular_estoque_defensivos retornou erro:", rpcErr.message || rpcErr);
+      }
 
       // 4) limpa preview e recarrega lista
       setPreview(null);
