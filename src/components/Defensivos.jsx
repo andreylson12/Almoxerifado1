@@ -1,93 +1,377 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
-import DefensivoForm from "./DefensivoForm";
-import DefensivosImportXML from "./DefensivosImportXML";
+import { Upload, Loader2, FileSpreadsheet } from "lucide-react";
 
-function Badge({ q }) {
-  const n = Number(q || 0);
-  const cls =
-    n > 50 ? "bg-green-100 text-green-700" :
-    n > 10 ? "bg-yellow-100 text-yellow-700" :
-             "bg-red-100 text-red-700";
-  return <span className={`px-3 py-1 rounded-full text-xs font-semibold ${cls}`}>{n}</span>;
+/** NCM -> Tipo (ajuste/expanda conforme sua necessidade) */
+const NCM_TO_TIPO = {
+  "38089993": "Acaricida",
+  "38089199": "Inseticida",
+  "38089329": "Inseticida",
+  "29155010": "Adjuvante",
+  "31052000": "Fertilizante",
+  "34029029": "Adjuvante",
+  // fallback: Outro
+};
+
+function toNumber(s) {
+  if (s == null) return 0;
+  return parseFloat(String(s).replace(",", ".")) || 0;
+}
+
+function mapTipoByNcm(ncm) {
+  const k = (ncm || "").replace(/\D/g, "");
+  return NCM_TO_TIPO[k] || "Outro";
 }
 
 export default function Defensivos() {
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const load = async () => {
-    const { data, error } = await supabase.from("defensivos").select("*").order("nome", { ascending: true });
-    if (!error) setRows(data || []);
-  };
+  // Pré-visualização de XML
+  const [preview, setPreview] = useState(null);
+  const [busyImport, setBusyImport] = useState(false);
 
-  useEffect(() => { load(); }, []);
+  // ====== Carrega lista (da VIEW de estoque) ======
+  const fetchList = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("vw_defensivos_estoque")
+        .select("id, nome, ncm, tipo, unidade, localizacao, estoque")
+        .order("nome", { ascending: true });
 
-  const handleAdd = async (def) => {
-    const { error } = await supabase.from("defensivos").insert([def]);
-    if (error) {
-      alert("Erro ao salvar: " + error.message);
-    } else {
-      load();
+      if (error) throw error;
+      setRows(data || []);
+    } catch (err) {
+      console.error("Falha ao carregar defensivos:", err);
+      alert("Falha ao carregar defensivos.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const filtered = q.trim()
-    ? rows.filter(r =>
-        (r.nome || "").toLowerCase().includes(q.toLowerCase()) ||
-        (r.ncm || "").includes(q.replace(/\D/g, ""))
-      )
-    : rows;
+  useEffect(() => {
+    fetchList();
+  }, []);
+
+  // ====== Parse do(s) XML ======
+  const handlePickXML = async (ev) => {
+    const files = Array.from(ev.target.files || []);
+    if (!files.length) return;
+
+    try {
+      setPreview({ loading: true });
+      const allItems = [];
+      let nf = "";
+      let fornecedor = "";
+
+      for (const file of files) {
+        const xmlText = await file.text();
+        const dom = new DOMParser().parseFromString(xmlText, "text/xml");
+
+        nf ||= (dom.querySelector("ide > nNF")?.textContent || "").trim();
+        fornecedor ||= (dom.querySelector("emit > xNome")?.textContent || "").trim();
+
+        dom.querySelectorAll("det").forEach((det) => {
+          const prod = det.querySelector("prod");
+          if (!prod) return;
+
+          const nome = (prod.querySelector("xProd")?.textContent || "").trim();
+          const ncm = (prod.querySelector("NCM")?.textContent || "").trim();
+          // unidade do XML pode vir 'LT', 'L', etc
+          let unidade = (prod.querySelector("uCom")?.textContent || "").trim().toUpperCase();
+          if (unidade === "LT") unidade = "L";
+          // quantidade
+          const quantidade = toNumber(prod.querySelector("qCom")?.textContent ?? prod.querySelector("qTrib")?.textContent);
+
+          // Lotes / rastro (opcional)
+          const lotes = Array.from(det.querySelectorAll("rastro")).map((r) => ({
+            lote: (r.querySelector("nLote")?.textContent || "").trim(),
+            qLote: toNumber(r.querySelector("qLote")?.textContent),
+            fabricacao: (r.querySelector("dFab")?.textContent || "").trim(),
+            validade: (r.querySelector("dVal")?.textContent || "").trim(),
+          }));
+
+          allItems.push({
+            nome,
+            ncm,
+            unidade,
+            quantidade,
+            tipo: mapTipoByNcm(ncm),
+            lotes,
+          });
+        });
+      }
+
+      setPreview({
+        nf,
+        fornecedor,
+        itens: allItems,
+      });
+    } catch (err) {
+      console.error(err);
+      alert("Falha ao importar NF.");
+      setPreview(null);
+    }
+  };
+
+  // ====== Lançar entradas da pré-visualização ======
+  const lancarEntradas = async () => {
+    if (!preview?.itens?.length) return;
+
+    setBusyImport(true);
+    try {
+      // 1) UPSERT dos defensivos
+      const upserts = preview.itens.map((it) => ({
+        nome: it.nome,
+        ncm: it.ncm || null,
+        tipo: it.tipo || "Outro",
+        unidade: it.unidade || null,
+      }));
+
+      // upsert por nome (garanta unique constraint em nome **ou** troque para outro campo)
+      const { data: upserted, error: upErr } = await supabase
+        .from("defensivos")
+        .upsert(upserts, { onConflict: "nome" })
+        .select("id, nome");
+
+      if (upErr) throw upErr;
+
+      // cria um mapa nome -> id
+      const idByName = new Map(upserted.map((d) => [d.nome, d.id]));
+
+      // 2) Monta movimentações (Entrada)
+      const movimentos = [];
+      for (const it of preview.itens) {
+        const defensivo_id = idByName.get(it.nome);
+        if (!defensivo_id) continue;
+
+        // se existirem lotes, cria 1 mov por lote; senão, 1 mov único
+        if (it.lotes?.length) {
+          for (const l of it.lotes) {
+            movimentos.push({
+              tipo: "Entrada",
+              defensivo_id,
+              quantidade: l.qLote || it.quantidade || 0,
+              unidade: it.unidade,
+              origem: "NF-e",
+              nf_numero: preview.nf || null,
+              fornecedor: preview.fornecedor || null,
+              lote: l.lote || null,
+              validade: l.validade || null,
+              fabricacao: l.fabricacao || null,
+            });
+          }
+        } else {
+          movimentos.push({
+            tipo: "Entrada",
+            defensivo_id,
+            quantidade: it.quantidade || 0,
+            unidade: it.unidade,
+            origem: "NF-e",
+            nf_numero: preview.nf || null,
+            fornecedor: preview.fornecedor || null,
+            lote: null,
+            validade: null,
+            fabricacao: null,
+          });
+        }
+      }
+
+      if (movimentos.length) {
+        const { error: movErr } = await supabase
+          .from("defensivo_movimentacoes")
+          .insert(movimentos);
+        if (movErr) throw movErr;
+      }
+
+      // 3) (Opcional) sincroniza coluna 'quantidade'
+      // ignore erro se função não existir
+      await supabase.rpc("recalcular_estoque_defensivos").catch(() => {});
+
+      // 4) limpa preview e recarrega lista
+      setPreview(null);
+      fetchList();
+      alert("Entradas lançadas com sucesso.");
+    } catch (err) {
+      console.error(err);
+      alert("Falha ao lançar entradas.");
+    } finally {
+      setBusyImport(false);
+    }
+  };
+
+  // ====== Filtro local da lista ======
+  const filtered = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    if (!term) return rows;
+    return rows.filter(
+      (r) =>
+        String(r.nome || "").toLowerCase().includes(term) ||
+        String(r.ncm || "").toLowerCase().includes(term)
+    );
+  }, [q, rows]);
 
   return (
-    <div className="space-y-6">
-      <DefensivoForm onAdd={handleAdd} />
-
-      <DefensivosImportXML />
-
-      <div className="flex items-center justify-between gap-3">
+    <div className="space-y-4">
+      {/* Importar NF-e (XML) */}
+      <div className="bg-white p-4 rounded-lg shadow flex flex-col gap-3">
+        <label className="font-semibold flex items-center gap-2">
+          <Upload className="h-4 w-4" />
+          Importar NF-e (XML)
+        </label>
         <input
-          className="border rounded px-3 py-2 w-full"
-          placeholder="Pesquisar por nome ou NCM…"
-          value={q}
-          onChange={(e)=>setQ(e.target.value)}
+          type="file"
+          accept=".xml"
+          multiple
+          onChange={handlePickXML}
+          className="border rounded px-3 py-2"
         />
+
+        {/* Pré-visualização */}
+        {preview?.itens?.length ? (
+          <div className="mt-3 border rounded-lg overflow-hidden">
+            <div className="px-3 py-2 bg-slate-50 flex items-center justify-between text-sm">
+              <div>
+                <span className="mr-4">NF: <b>{preview.nf || "—"}</b></span>
+                <span>Fornecedor: <b>{preview.fornecedor || "—"}</b></span>
+              </div>
+              <button
+                disabled={busyImport}
+                onClick={lancarEntradas}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-60"
+              >
+                {busyImport ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Lançando…
+                  </span>
+                ) : (
+                  "Lançar Entradas"
+                )}
+              </button>
+            </div>
+
+            <table className="w-full text-sm">
+              <thead className="bg-slate-100">
+                <tr>
+                  <th className="p-2 text-left">Nome</th>
+                  <th className="p-2 text-left">NCM</th>
+                  <th className="p-2 text-left">Unid.</th>
+                  <th className="p-2 text-left">Quantidade</th>
+                  <th className="p-2 text-left">Tipo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.itens.map((it, idx) => (
+                  <tr key={idx} className="border-t">
+                    <td className="p-2">{it.nome}</td>
+                    <td className="p-2">{it.ncm || "—"}</td>
+                    <td className="p-2">{it.unidade || "—"}</td>
+                    <td className="p-2">{it.quantidade}</td>
+                    <td className="p-2">
+                      <select
+                        className="border rounded px-2 py-1"
+                        value={it.tipo}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setPreview((s) => {
+                            const clone = { ...s };
+                            clone.itens = s.itens.map((x, i) =>
+                              i === idx ? { ...x, tipo: v } : x
+                            );
+                            return clone;
+                          });
+                        }}
+                      >
+                        {[
+                          "Herbicida",
+                          "Fungicida",
+                          "Inseticida",
+                          "Acaricida",
+                          "Nematicida",
+                          "Adjuvante",
+                          "Fertilizante",
+                          "Outro",
+                        ].map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </div>
 
-      <div className="overflow-x-auto rounded-lg shadow-md">
-        <table className="w-full border-collapse bg-white">
-          <thead>
-            <tr className="bg-gray-200 text-gray-700 text-sm uppercase">
-              <th className="px-4 py-3 text-left">Nome</th>
-              <th className="px-4 py-3 text-left">NCM</th>
-              <th className="px-4 py-3 text-left">Tipo</th>
-              <th className="px-4 py-3 text-left">Unidade</th>
-              <th className="px-4 py-3 text-center">Qtd.</th>
-              <th className="px-4 py-3 text-left">Localização</th>
+      {/* Busca */}
+      <input
+        className="border rounded px-3 py-2 w-full"
+        placeholder="Pesquisar por nome ou NCM..."
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
+
+      {/* Lista principal */}
+      <div className="overflow-x-auto rounded-lg shadow">
+        <table className="w-full bg-white">
+          <thead className="bg-slate-100">
+            <tr>
+              <th className="p-2 text-left">Nome</th>
+              <th className="p-2 text-left">NCM</th>
+              <th className="p-2 text-left">Tipo</th>
+              <th className="p-2 text-left">Unidade</th>
+              <th className="p-2 text-center">Qtd.</th>
+              <th className="p-2 text-left">Localização</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((d, i) => (
-              <tr key={d.id} className={`${i % 2 === 0 ? "bg-gray-50" : "bg-white"} hover:bg-blue-50 transition`}>
-                <td className="px-4 py-2">{d.nome}</td>
-                <td className="px-4 py-2">{d.ncm || "—"}</td>
-                <td className="px-4 py-2">{d.tipo || "—"}</td>
-                <td className="px-4 py-2">{d.unidade || "—"}</td>
-                <td className="px-4 py-2 text-center"><Badge q={d.quantidade} /></td>
-                <td className="px-4 py-2">{d.localizacao || "—"}</td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
+            {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
-                  Nenhum defensivo encontrado.
+                <td className="p-4 text-center" colSpan={6}>
+                  <span className="inline-flex items-center gap-2 text-slate-600">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Carregando…
+                  </span>
                 </td>
               </tr>
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td className="p-4 text-center text-slate-500" colSpan={6}>
+                  Nenhum registro.
+                </td>
+              </tr>
+            ) : (
+              filtered.map((r) => (
+                <tr key={r.id} className="border-t">
+                  <td className="p-2">{r.nome}</td>
+                  <td className="p-2">{r.ncm || "—"}</td>
+                  <td className="p-2">{r.tipo || "—"}</td>
+                  <td className="p-2">{r.unidade || "—"}</td>
+                  <td className="p-2 text-center">
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                        (Number(r.estoque) || 0) > 50
+                          ? "bg-green-100 text-green-700"
+                          : (Number(r.estoque) || 0) > 10
+                          ? "bg-yellow-100 text-yellow-700"
+                          : "bg-red-100 text-red-700"
+                      }`}
+                    >
+                      {Number(r.estoque || 0)}
+                    </span>
+                  </td>
+                  <td className="p-2">{r.localizacao || "—"}</td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
       </div>
-
     </div>
   );
 }
