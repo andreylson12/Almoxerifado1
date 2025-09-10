@@ -10,8 +10,8 @@ import MaquinaForm from "./components/MaquinaForm";
 import MaquinasTable from "./components/MaquinasTable";
 import FuncionarioForm from "./components/FuncionarioForm";
 import FuncionariosTable from "./components/FuncionariosTable";
-import Inventario from "./components/Inventario"; // 👈 mantém
-import Defensivos from "./components/Defensivos"; // 👈 NOVO
+import Inventario from "./components/Inventario";
+import Defensivos from "./components/Defensivos"; // ✅ NOVO
 
 // 🔵 PAGINAÇÃO PRODUTOS
 const PROD_PAGE_SIZE = 50;
@@ -222,7 +222,7 @@ export default function App() {
       );
       if (!ok) return;
 
-      // Buscar campos essenciais se não estiverem no objeto
+      // Garante que temos os campos essenciais
       let movimento = mov;
       if (
         movimento.produto_id === undefined ||
@@ -240,7 +240,7 @@ export default function App() {
 
       const { produto_id, tipo, quantidade } = movimento;
 
-      // Reverte estoque se houver produto vinculado
+      // Se houver produto vinculado, reverte o estoque
       if (produto_id) {
         const { data: prod, error: prodErr } = await supabase
           .from("produtos")
@@ -250,6 +250,7 @@ export default function App() {
         if (prodErr) throw prodErr;
 
         const atual = Number(prod?.quantidade ?? 0);
+        // Entrada excluída => tira do estoque; Saída excluída => devolve ao estoque
         const delta = tipo === "Entrada" ? -Number(quantidade) : Number(quantidade);
         const novo = atual + delta;
 
@@ -273,7 +274,7 @@ export default function App() {
 
       // Atualiza estados locais
       setMovimentacoes((prev) => prev.filter((m) => m.id !== mov.id));
-      fetchProdutos(prodPage, search);
+      fetchProdutos(prodPage, search); // mantém lista de produtos coerente
 
       alert("Movimentação excluída com sucesso.");
     } catch (e) {
@@ -340,8 +341,8 @@ export default function App() {
         tabs={[
           "Movimentações",
           "Produtos",
+          "Defensivos",   // ✅ NOVO
           "Inventário",
-          "Defensivos",   // 👈 NOVO
           "Máquinas",
           "Funcionários",
         ]}
@@ -358,7 +359,6 @@ export default function App() {
               maquinas={maquinas}
               onAdd={handleMovimentacao}
             />
-            {/* mantém e passa o deletar */}
             <MovTable data={movimentacoes} onDelete={handleExcluirMovimentacao} />
           </>
         )}
@@ -385,6 +385,7 @@ export default function App() {
                     .insert([produtoCorrigido]);
 
                   if (!error) {
+                    // 🔵 Recarrega a listagem (primeira página) para incluir o novo item
                     fetchProdutos(1, search);
                   }
                 } catch (e) {
@@ -444,13 +445,9 @@ export default function App() {
           </>
         )}
 
-        {tab === "Inventário" && (
-          <Inventario pageSize={50} />
-        )}
+        {tab === "Defensivos" && <Defensivos />}
 
-        {tab === "Defensivos" && (
-          <Defensivos />   {/* 👈 NOVO */}
-        )}
+        {tab === "Inventário" && <Inventario pageSize={50} />}
 
         {tab === "Máquinas" && (
           <>
