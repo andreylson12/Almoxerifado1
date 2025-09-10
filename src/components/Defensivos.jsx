@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
-import { Upload, Loader2, FileDown } from "lucide-react";
+import { Upload, Loader2 } from "lucide-react";
 
 /** NCM -> Tipo (ajuste/expanda conforme sua necessidade) */
 const NCM_TO_TIPO = {
@@ -10,26 +10,23 @@ const NCM_TO_TIPO = {
   "29155010": "Adjuvante",
   "31052000": "Fertilizante",
   "34029029": "Adjuvante",
-  // fallback: "Outro"
 };
 
 function toNumber(s) {
   if (s == null) return 0;
   return parseFloat(String(s).replace(",", ".")) || 0;
 }
-
 function mapTipoByNcm(ncm) {
   const k = (ncm || "").replace(/\D/g, "");
   return NCM_TO_TIPO[k] || "Outro";
 }
 
 export default function Defensivos() {
-  const [rows, setRows] = useState([]);
-  const [q, setQ] = useState("");
+  const [rows, setRows] = useState([]);              // defensivos + estoque (para selects)
+  const [q, setQ] = useState("");                    // busca (aba Entrada)
   const [loading, setLoading] = useState(false);
 
-  // sub-abas internas desta tela
-  const [subTab, setSubTab] = useState("Entrada"); // "Entrada" | "Saída" | "Inventário"
+  const [subTab, setSubTab] = useState("Entrada");   // "Entrada" | "Saída" | "Inventário"
 
   // ====== XML / Pré-visualização de NF-e ======
   const [preview, setPreview] = useState(null);
@@ -50,22 +47,23 @@ export default function Defensivos() {
   });
   const setS = (k, v) => setSaida((s) => ({ ...s, [k]: v }));
 
-  // ====== Período do PDF (Entradas) ======
-  const [dtInicio, setDtInicio] = useState("");
-  const [dtFim, setDtFim] = useState("");
+  // ====== Lista de SAÍDAS ======
+  const [saidas, setSaidas] = useState([]);
+  const [loadingSaidas, setLoadingSaidas] = useState(false);
 
-  useEffect(() => {
-    // período padrão: última semana
-    const today = new Date();
-    const fim = today.toISOString().slice(0, 10);
-    const iniDate = new Date(today);
-    iniDate.setDate(today.getDate() - 7);
-    const ini = iniDate.toISOString().slice(0, 10);
-    setDtInicio(ini);
-    setDtFim(fim);
-  }, []);
+  // ====== Inventário (contagem/ajuste) ======
+  const [inv, setInv] = useState({
+    defensivo_id: "",
+    contagem: "",
+    unidade: "",
+    observacoes: "",
+  });
+  const setInvField = (k, v) => setInv((s) => ({ ...s, [k]: v }));
 
-  // Carrega lista (da VIEW de estoque) — usado no Inventário e no select da Saída
+  const [ajustes, setAjustes] = useState([]);        // histórico de ajustes
+  const [loadingAjustes, setLoadingAjustes] = useState(false);
+
+  // -------- Carrega lista de defensivos (view de estoque) --------
   const fetchList = async () => {
     setLoading(true);
     try {
@@ -84,9 +82,68 @@ export default function Defensivos() {
     }
   };
 
+  // -------- Carrega lista de SAÍDAS --------
+  const fetchSaidas = async () => {
+    setLoadingSaidas(true);
+    try {
+      // troque o nome do relacionamento se no seu schema for outro
+      const rel = "defensivo_movimentacoes_defensivo_id_fkey";
+      const { data, error } = await supabase
+        .from("defensivo_movimentacoes")
+        .select(
+          `
+          id, created_at, data_aplicacao, aplicacao, talhao, area_ha, maquina, operador, observacoes,
+          quantidade, unidade,
+          defensivo:defensivos!${rel} ( id, nome )
+        `
+        )
+        .eq("tipo", "Saida")
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (error) throw error;
+      setSaidas(data || []);
+    } catch (err) {
+      console.error("Falha ao carregar saídas:", err);
+      alert("Falha ao carregar saídas.");
+    } finally {
+      setLoadingSaidas(false);
+    }
+  };
+
+  // -------- Carrega histórico de AJUSTES (origem Inventário) --------
+  const fetchAjustes = async () => {
+    setLoadingAjustes(true);
+    try {
+      const rel = "defensivo_movimentacoes_defensivo_id_fkey";
+      const { data, error } = await supabase
+        .from("defensivo_movimentacoes")
+        .select(
+          `
+          id, created_at, tipo, quantidade, unidade, observacoes,
+          defensivo:defensivos!${rel} ( id, nome )
+        `
+        )
+        .eq("origem", "Inventário")
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (error) throw error;
+      setAjustes(data || []);
+    } catch (err) {
+      console.error("Falha ao carregar ajustes:", err);
+      alert("Falha ao carregar ajustes de inventário.");
+    } finally {
+      setLoadingAjustes(false);
+    }
+  };
+
+  useEffect(() => { fetchList(); }, []);
+
   useEffect(() => {
-    fetchList();
-  }, []);
+    if (subTab === "Saída") fetchSaidas();
+    if (subTab === "Inventário") fetchAjustes();
+  }, [subTab]);
 
   // ====== Parse do(s) XML ======
   const handlePickXML = async (ev) => {
@@ -112,7 +169,6 @@ export default function Defensivos() {
 
           const nome = (prod.querySelector("xProd")?.textContent || "").trim();
           const ncm = (prod.querySelector("NCM")?.textContent || "").trim();
-          // unidade pode vir "LT" -> normaliza para "L"
           let unidade = (prod.querySelector("uCom")?.textContent || "").trim().toUpperCase();
           if (unidade === "LT") unidade = "L";
 
@@ -120,7 +176,6 @@ export default function Defensivos() {
             toNumber(prod.querySelector("qCom")?.textContent) ||
             toNumber(prod.querySelector("qTrib")?.textContent);
 
-          // lotes (opcional)
           const lotes = Array.from(det.querySelectorAll("rastro")).map((r) => ({
             lote: (r.querySelector("nLote")?.textContent || "").trim(),
             qLote: toNumber(r.querySelector("qLote")?.textContent),
@@ -139,11 +194,7 @@ export default function Defensivos() {
         });
       }
 
-      setPreview({
-        nf,
-        fornecedor,
-        itens: allItems,
-      });
+      setPreview({ nf, fornecedor, itens: allItems });
     } catch (err) {
       console.error(err);
       alert("Falha ao importar NF.");
@@ -151,13 +202,12 @@ export default function Defensivos() {
     }
   };
 
-  // ====== Lançar entradas da pré-visualização ======
+  // ====== Lançar ENTRADAS ======
   const lancarEntradas = async () => {
     if (!preview?.itens?.length) return;
 
     setBusyImport(true);
     try {
-      // 1) UPSERT dos defensivos por nome
       const upserts = preview.itens.map((it) => ({
         nome: it.nome,
         ncm: it.ncm || null,
@@ -174,7 +224,6 @@ export default function Defensivos() {
 
       const idByName = new Map(upserted.map((d) => [d.nome, d.id]));
 
-      // 2) Monta movimentações (Entrada)
       const movimentos = [];
       for (const it of preview.itens) {
         const defensivo_id = idByName.get(it.nome);
@@ -218,10 +267,7 @@ export default function Defensivos() {
         if (movErr) throw movErr;
       }
 
-      // 3) Recalcula estoque (se função existir)
-      try {
-        await supabase.rpc("recalcular_estoque_defensivos");
-      } catch {}
+      try { await supabase.rpc("recalcular_estoque_defensivos"); } catch (_) {}
 
       setPreview(null);
       fetchList();
@@ -234,7 +280,7 @@ export default function Defensivos() {
     }
   };
 
-  // ====== Saída (abate + grava p/ relatório) ======
+  // ====== Registrar SAÍDA ======
   const selectedRow = useMemo(
     () => rows.find((r) => r.id === Number(saida.defensivo_id)),
     [rows, saida.defensivo_id]
@@ -248,7 +294,6 @@ export default function Defensivos() {
       if (!defensivo_id) return alert("Selecione o defensivo.");
       if (!quantidade || quantidade <= 0) return alert("Informe uma quantidade válida.");
 
-      // valida estoque (se disponível)
       const row = rows.find((r) => r.id === defensivo_id);
       if (row && Number(row.estoque || 0) < quantidade) {
         return alert("Estoque insuficiente para essa saída.");
@@ -258,7 +303,7 @@ export default function Defensivos() {
         tipo: "Saida",
         defensivo_id,
         quantidade,
-        unidade: (saida.unidade || selectedRow?.unidade || "").toUpperCase() || null,
+        unidade: saida.unidade || selectedRow?.unidade || null,
         origem: "Aplicação",
         aplicacao: saida.aplicacao || null,
         data_aplicacao: saida.data_aplicacao || null,
@@ -269,18 +314,14 @@ export default function Defensivos() {
         observacoes: saida.observacoes || null,
       };
 
-      const { error } = await supabase
-        .from("defensivo_movimentacoes")
-        .insert([payload]);
+      const { error } = await supabase.from("defensivo_movimentacoes").insert([payload]);
       if (error) throw error;
 
-      // recalcula/atualiza estoque
-      try {
-        await supabase.rpc("recalcular_estoque_defensivos");
-      } catch {}
-      await fetchList();
+      try { await supabase.rpc("recalcular_estoque_defensivos"); } catch (_) {}
 
-      // limpa os campos
+      await fetchList();
+      await fetchSaidas();
+
       setSaida({
         defensivo_id: "",
         quantidade: "",
@@ -301,115 +342,55 @@ export default function Defensivos() {
     }
   };
 
-  // ====== PDF de Entradas (por período) ======
-  const gerarPdfEntradas = async () => {
-    if (!dtInicio || !dtFim) {
-      return alert("Informe o período (início e fim).");
-    }
-
-    // Carrega jspdf e autotable via CDN para não quebrar o build do Vite/Vercel
-    let jsPDF, autoTable;
+  // ====== Registrar AJUSTE DE INVENTÁRIO ======
+  const registrarInventario = async () => {
     try {
-      const { jsPDF: JSPDF } = await import(
-        /* @vite-ignore */ "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm"
-      );
-      jsPDF = JSPDF;
+      const defensivo_id = Number(inv.defensivo_id);
+      const contagem = Number(inv.contagem);
 
-      const auto = await import(
-        /* @vite-ignore */ "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.1/+esm"
-      );
-      autoTable = auto.default || auto;
-    } catch (e) {
-      console.error(e);
-      alert(
-        "Falha ao carregar bibliotecas de PDF. Se preferir instalar localmente, rode: npm i jspdf jspdf-autotable"
-      );
-      return;
-    }
+      if (!defensivo_id) return alert("Selecione o defensivo.");
+      if (!Number.isFinite(contagem) || contagem < 0) {
+        return alert("Informe uma contagem válida (>= 0).");
+      }
 
-    try {
-      const iniIso = `${dtInicio}T00:00:00`;
-      const fimIso = `${dtFim}T23:59:59`;
+      const row = rows.find((r) => r.id === defensivo_id);
+      const atual = Number(row?.estoque || 0);
+      const diff = contagem - atual;
 
-      // Usa a relação explícita para evitar ambiguidade no embed
-      const { data, error } = await supabase
-        .from("defensivo_movimentacoes")
-        .select(
-          `
-          id, created_at, tipo, quantidade, unidade, origem, nf_numero, fornecedor, lote, validade, fabricacao,
-          defensivos!defensivo_movimentacoes_defensivo_id_fkey ( nome )
-        `
-        )
-        .eq("tipo", "Entrada")
-        .gte("created_at", iniIso)
-        .lte("created_at", fimIso)
-        .order("created_at", { ascending: true });
-
-      if (error) throw error;
-
-      if (!data || data.length === 0) {
-        alert("Sem entradas no período selecionado.");
+      if (diff === 0) {
+        alert("Sem diferença entre contagem e estoque atual.");
         return;
       }
 
-      const doc = new jsPDF({ orientation: "landscape" });
+      const isEntrada = diff > 0;
+      const payload = {
+        tipo: isEntrada ? "Entrada" : "Saida",
+        defensivo_id,
+        quantidade: Math.abs(diff),
+        unidade: inv.unidade || row?.unidade || null,
+        origem: "Inventário",
+        observacoes:
+          inv.observacoes ||
+          `Ajuste de inventário. Contagem=${contagem}, EstoqueAnterior=${atual}`,
+      };
 
-      const titulo = `Relatório de Entradas de Defensivos (${new Date(
-        dtInicio
-      ).toLocaleDateString()} a ${new Date(dtFim).toLocaleDateString()})`;
+      const { error } = await supabase.from("defensivo_movimentacoes").insert([payload]);
+      if (error) throw error;
 
-      doc.setFontSize(14);
-      doc.text(titulo, 14, 16);
+      try { await supabase.rpc("recalcular_estoque_defensivos"); } catch (_) {}
 
-      const head = [
-        [
-          "Data",
-          "Defensivo",
-          "Qtd.",
-          "Unid.",
-          "Origem",
-          "NF",
-          "Fornecedor",
-          "Lote",
-          "Fab.",
-          "Val.",
-        ],
-      ];
+      await fetchList();
+      await fetchAjustes();
 
-      const body = data.map((r) => [
-        new Date(r.created_at).toLocaleString(),
-        r.defensivos?.nome ?? "",
-        r.quantidade ?? "",
-        r.unidade ?? "",
-        r.origem ?? "",
-        r.nf_numero ?? "",
-        r.fornecedor ?? "",
-        r.lote ?? "",
-        r.fabricacao ?? "",
-        r.validade ?? "",
-      ]);
-
-      autoTable(doc, {
-        head,
-        body,
-        startY: 22,
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [22, 101, 216] }, // azul
-      });
-
-      doc.save(
-        `entradas_defensivos_${dtInicio.replaceAll("-", "")}_${dtFim.replaceAll(
-          "-",
-          ""
-        )}.pdf`
-      );
+      setInv({ defensivo_id: "", contagem: "", unidade: "", observacoes: "" });
+      alert("Ajuste de inventário registrado.");
     } catch (err) {
-      console.error("Erro ao gerar PDF:", err);
-      alert("Falha ao gerar PDF.");
+      console.error(err);
+      alert("Falha ao registrar ajuste de inventário.");
     }
   };
 
-  // ====== Filtro local da lista (Inventário) ======
+  // ====== Filtro local da lista (apenas para a aba Entrada) ======
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return rows;
@@ -439,37 +420,7 @@ export default function Defensivos() {
 
       {/* ======= Aba ENTRADA ======= */}
       {subTab === "Entrada" && (
-        <div className="space-y-4">
-          {/* Filtros para PDF + Botão */}
-          <div className="bg-white p-4 rounded-lg shadow flex flex-wrap gap-3 items-end">
-            <div>
-              <label className="block text-sm text-slate-600">Início</label>
-              <input
-                type="date"
-                value={dtInicio}
-                onChange={(e) => setDtInicio(e.target.value)}
-                className="border rounded px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-600">Fim</label>
-              <input
-                type="date"
-                value={dtFim}
-                onChange={(e) => setDtFim(e.target.value)}
-                className="border rounded px-3 py-2"
-              />
-            </div>
-            <button
-              onClick={gerarPdfEntradas}
-              className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded"
-            >
-              <FileDown className="h-4 w-4" />
-              Gerar PDF (Entradas)
-            </button>
-          </div>
-
-          {/* Importar NF-e (XML) */}
+        <>
           <div className="bg-white p-4 rounded-lg shadow flex flex-col gap-3">
             <label className="font-semibold flex items-center gap-2">
               <Upload className="h-4 w-4" />
@@ -483,17 +434,12 @@ export default function Defensivos() {
               className="border rounded px-3 py-2"
             />
 
-            {/* Pré-visualização */}
             {preview?.itens?.length ? (
               <div className="mt-3 border rounded-lg overflow-hidden">
                 <div className="px-3 py-2 bg-slate-50 flex items-center justify-between text-sm">
                   <div>
-                    <span className="mr-4">
-                      NF: <b>{preview.nf || "—"}</b>
-                    </span>
-                    <span>
-                      Fornecedor: <b>{preview.fornecedor || "—"}</b>
-                    </span>
+                    <span className="mr-4">NF: <b>{preview.nf || "—"}</b></span>
+                    <span>Fornecedor: <b>{preview.fornecedor || "—"}</b></span>
                   </div>
                   <button
                     disabled={busyImport}
@@ -543,19 +489,9 @@ export default function Defensivos() {
                             }}
                           >
                             {[
-                              "Herbicida",
-                              "Fungicida",
-                              "Inseticida",
-                              "Acaricida",
-                              "Nematicida",
-                              "Adjuvante",
-                              "Fertilizante",
-                              "Outro",
-                            ].map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
+                              "Herbicida","Fungicida","Inseticida","Acaricida",
+                              "Nematicida","Adjuvante","Fertilizante","Outro",
+                            ].map((t) => <option key={t} value={t}>{t}</option>)}
                           </select>
                         </td>
                       </tr>
@@ -565,125 +501,15 @@ export default function Defensivos() {
               </div>
             ) : null}
           </div>
-        </div>
-      )}
 
-      {/* ======= Aba SAÍDA ======= */}
-      {subTab === "Saída" && (
-        <div className="bg-white p-4 rounded-lg shadow space-y-3">
-          <h3 className="font-semibold">Saída rápida (abate estoque + registra)</h3>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <select
-              className="border rounded px-3 py-2"
-              value={saida.defensivo_id}
-              onChange={(e) => {
-                const id = e.target.value;
-                setS("defensivo_id", id);
-                const r = rows.find((x) => x.id === Number(id));
-                if (r && !saida.unidade) setS("unidade", r.unidade || "");
-              }}
-            >
-              <option value="">Selecione o defensivo...</option>
-              {rows.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.nome}
-                </option>
-              ))}
-            </select>
-
-            <input
-              className="border rounded px-3 py-2"
-              placeholder="Quantidade"
-              type="number"
-              value={saida.quantidade}
-              onChange={(e) => setS("quantidade", e.target.value)}
-            />
-
-            <input
-              className="border rounded px-3 py-2"
-              placeholder="Unidade (ex: L, KG)"
-              value={saida.unidade}
-              onChange={(e) => setS("unidade", e.target.value.toUpperCase())}
-            />
-
-            <input
-              className="border rounded px-3 py-2"
-              type="date"
-              value={saida.data_aplicacao}
-              onChange={(e) => setS("data_aplicacao", e.target.value)}
-            />
-
-            <input
-              className="border rounded px-3 py-2"
-              placeholder="Talhão/Área"
-              value={saida.talhao}
-              onChange={(e) => setS("talhao", e.target.value)}
-            />
-
-            <input
-              className="border rounded px-3 py-2"
-              placeholder="Área (ha)"
-              type="number"
-              value={saida.area_ha}
-              onChange={(e) => setS("area_ha", e.target.value)}
-            />
-
-            <input
-              className="border rounded px-3 py-2"
-              placeholder="Máquina"
-              value={saida.maquina}
-              onChange={(e) => setS("maquina", e.target.value)}
-            />
-
-            <input
-              className="border rounded px-3 py-2"
-              placeholder="Operador/Funcionário"
-              value={saida.operador}
-              onChange={(e) => setS("operador", e.target.value)}
-            />
-
-            <select
-              className="border rounded px-3 py-2"
-              value={saida.aplicacao}
-              onChange={(e) => setS("aplicacao", e.target.value)}
-            >
-              <option value="">Aplicação</option>
-              <option value="Terrestre">Terrestre</option>
-              <option value="Aérea">Aérea</option>
-              <option value="Outro">Outro</option>
-            </select>
-          </div>
-
-          <textarea
-            className="border rounded px-3 py-2 w-full"
-            rows={3}
-            placeholder="Observações"
-            value={saida.observacoes}
-            onChange={(e) => setS("observacoes", e.target.value)}
-          />
-
-          <div className="flex justify-end">
-            <button
-              onClick={registrarSaida}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
-            >
-              Registrar Saída
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ======= Aba INVENTÁRIO ======= */}
-      {subTab === "Inventário" && (
-        <>
+          {/* Busca + Lista de defensivos */}
           <input
             className="border rounded px-3 py-2 w-full"
             placeholder="Pesquisar por nome ou NCM..."
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          <div className="overflow-x-auto rounded-lg shadow mt-3">
+          <div className="overflow-x-auto rounded-lg shadow">
             <table className="w-full bg-white">
               <thead className="bg-slate-100">
                 <tr>
@@ -732,6 +558,281 @@ export default function Defensivos() {
                         </span>
                       </td>
                       <td className="p-2">{r.localizacao || "—"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* ======= Aba SAÍDA ======= */}
+      {subTab === "Saída" && (
+        <>
+          <div className="bg-white p-4 rounded-lg shadow space-y-3">
+            <h3 className="font-semibold">Saída rápida (abate estoque + registra)</h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <select
+                className="border rounded px-3 py-2"
+                value={saida.defensivo_id}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setS("defensivo_id", id);
+                  const r = rows.find((x) => x.id === Number(id));
+                  if (r && !saida.unidade) setS("unidade", r.unidade || "");
+                }}
+              >
+                <option value="">Selecione o defensivo...</option>
+                {rows.map((r) => (
+                  <option key={r.id} value={r.id}>{r.nome}</option>
+                ))}
+              </select>
+
+              <input
+                className="border rounded px-3 py-2"
+                placeholder="Quantidade"
+                type="number"
+                value={saida.quantidade}
+                onChange={(e) => setS("quantidade", e.target.value)}
+              />
+
+              <input
+                className="border rounded px-3 py-2"
+                placeholder="Unidade (ex: L, KG)"
+                value={saida.unidade}
+                onChange={(e) => setS("unidade", e.target.value.toUpperCase())}
+              />
+
+              <input
+                className="border rounded px-3 py-2"
+                type="date"
+                value={saida.data_aplicacao}
+                onChange={(e) => setS("data_aplicacao", e.target.value)}
+              />
+
+              <input
+                className="border rounded px-3 py-2"
+                placeholder="Talhão/Área"
+                value={saida.talhao}
+                onChange={(e) => setS("talhao", e.target.value)}
+              />
+
+              <input
+                className="border rounded px-3 py-2"
+                placeholder="Área (ha)"
+                type="number"
+                value={saida.area_ha}
+                onChange={(e) => setS("area_ha", e.target.value)}
+              />
+
+              <input
+                className="border rounded px-3 py-2"
+                placeholder="Máquina"
+                value={saida.maquina}
+                onChange={(e) => setS("maquina", e.target.value)}
+              />
+
+              <input
+                className="border rounded px-3 py-2"
+                placeholder="Operador/Funcionário"
+                value={saida.operador}
+                onChange={(e) => setS("operador", e.target.value)}
+              />
+
+              <select
+                className="border rounded px-3 py-2"
+                value={saida.aplicacao}
+                onChange={(e) => setS("aplicacao", e.target.value)}
+              >
+                <option value="">Aplicação</option>
+                <option value="Terrestre">Terrestre</option>
+                <option value="Aérea">Aérea</option>
+                <option value="Outro">Outro</option>
+              </select>
+            </div>
+
+            <textarea
+              className="border rounded px-3 py-2 w-full"
+              rows={3}
+              placeholder="Observações"
+              value={saida.observacoes}
+              onChange={(e) => setS("observacoes", e.target.value)}
+            />
+
+            <div className="flex justify-end">
+              <button
+                onClick={registrarSaida}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+              >
+                Registrar Saída
+              </button>
+            </div>
+          </div>
+
+          {/* Lista de SAÍDAS */}
+          <div className="overflow-x-auto rounded-lg shadow">
+            <table className="w-full bg-white">
+              <thead className="bg-slate-100">
+                <tr>
+                  <th className="p-2 text-left">Data</th>
+                  <th className="p-2 text-left">Defensivo</th>
+                  <th className="p-2 text-left">Qtd/Unid</th>
+                  <th className="p-2 text-left">Aplicação</th>
+                  <th className="p-2 text-left">Talhão / Área (ha)</th>
+                  <th className="p-2 text-left">Máquina</th>
+                  <th className="p-2 text-left">Operador</th>
+                  <th className="p-2 text-left">Observações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingSaidas ? (
+                  <tr>
+                    <td className="p-4 text-center" colSpan={8}>
+                      <span className="inline-flex items-center gap-2 text-slate-600">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Carregando saídas…
+                      </span>
+                    </td>
+                  </tr>
+                ) : saidas.length === 0 ? (
+                  <tr>
+                    <td className="p-4 text-center text-slate-500" colSpan={8}>
+                      Nenhuma saída registrada.
+                    </td>
+                  </tr>
+                ) : (
+                  saidas.map((m) => (
+                    <tr key={m.id} className="border-t">
+                      <td className="p-2">
+                        {m.data_aplicacao
+                          ? new Date(m.data_aplicacao).toLocaleDateString()
+                          : new Date(m.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="p-2">{m.defensivo?.nome || "—"}</td>
+                      <td className="p-2">
+                        {m.quantidade} {m.unidade || ""}
+                      </td>
+                      <td className="p-2">{m.aplicacao || "—"}</td>
+                      <td className="p-2">
+                        {m.talhao || "—"} {m.area_ha ? ` / ${m.area_ha}` : ""}
+                      </td>
+                      <td className="p-2">{m.maquina || "—"}</td>
+                      <td className="p-2">{m.operador || "—"}</td>
+                      <td className="p-2">{m.observacoes || "—"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* ======= Aba INVENTÁRIO ======= */}
+      {subTab === "Inventário" && (
+        <>
+          <div className="bg-white p-4 rounded-lg shadow space-y-3">
+            <h3 className="font-semibold">Ajuste de inventário (contagem)</h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <select
+                className="border rounded px-3 py-2"
+                value={inv.defensivo_id}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setInvField("defensivo_id", id);
+                  const r = rows.find((x) => x.id === Number(id));
+                  if (r && !inv.unidade) setInvField("unidade", r.unidade || "");
+                }}
+              >
+                <option value="">Selecione o defensivo...</option>
+                {rows.map((r) => (
+                  <option key={r.id} value={r.id}>{r.nome}</option>
+                ))}
+              </select>
+
+              <input
+                className="border rounded px-3 py-2"
+                placeholder="Contagem (quantidade total)"
+                type="number"
+                value={inv.contagem}
+                onChange={(e) => setInvField("contagem", e.target.value)}
+              />
+
+              <input
+                className="border rounded px-3 py-2"
+                placeholder="Unidade (ex: L, KG)"
+                value={inv.unidade}
+                onChange={(e) => setInvField("unidade", e.target.value.toUpperCase())}
+              />
+            </div>
+
+            {/* Mostra estoque atual do selecionado */}
+            {inv.defensivo_id ? (
+              <div className="text-sm text-slate-600">
+                Estoque atual:{" "}
+                <b>
+                  {Number(rows.find((r) => r.id === Number(inv.defensivo_id))?.estoque || 0)}{" "}
+                  {rows.find((r) => r.id === Number(inv.defensivo_id))?.unidade || ""}
+                </b>
+              </div>
+            ) : null}
+
+            <textarea
+              className="border rounded px-3 py-2 w-full"
+              rows={3}
+              placeholder="Observações (opcional)"
+              value={inv.observacoes}
+              onChange={(e) => setInvField("observacoes", e.target.value)}
+            />
+
+            <div className="flex justify-end">
+              <button
+                onClick={registrarInventario}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+              >
+                Registrar Ajuste
+              </button>
+            </div>
+          </div>
+
+          {/* Histórico de AJUSTES */}
+          <div className="overflow-x-auto rounded-lg shadow">
+            <table className="w-full bg-white">
+              <thead className="bg-slate-100">
+                <tr>
+                  <th className="p-2 text-left">Data</th>
+                  <th className="p-2 text-left">Defensivo</th>
+                  <th className="p-2 text-left">Ajuste</th>
+                  <th className="p-2 text-left">Obs.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingAjustes ? (
+                  <tr>
+                    <td className="p-4 text-center" colSpan={4}>
+                      <span className="inline-flex items-center gap-2 text-slate-600">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Carregando ajustes…
+                      </span>
+                    </td>
+                  </tr>
+                ) : ajustes.length === 0 ? (
+                  <tr>
+                    <td className="p-4 text-center text-slate-500" colSpan={4}>
+                      Nenhum ajuste registrado.
+                    </td>
+                  </tr>
+                ) : (
+                  ajustes.map((m) => (
+                    <tr key={m.id} className="border-t">
+                      <td className="p-2">{new Date(m.created_at).toLocaleString()}</td>
+                      <td className="p-2">{m.defensivo?.nome || "—"}</td>
+                      <td className={`p-2 ${m.tipo === "Entrada" ? "text-green-700" : "text-red-700"}`}>
+                        {m.tipo === "Entrada" ? "+" : "-"} {m.quantidade} {m.unidade || ""}
+                      </td>
+                      <td className="p-2">{m.observacoes || "—"}</td>
                     </tr>
                   ))
                 )}
