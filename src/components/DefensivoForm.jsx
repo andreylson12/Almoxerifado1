@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { PlusCircle } from "lucide-react";
+import { inferTipoFromNcm } from "../lib/ncmMap";
 
-const TIPOS = ["Herbicida", "Fungicida", "Inseticida", "Acaricida", "Nematicida", "Adjuvante", "Outro"];
+const TIPOS = ["Herbicida", "Fungicida", "Inseticida", "Acaricida", "Nematicida", "Adjuvante", "Fertilizante", "Desinfetante", "Outro"];
 const UNIDADES = ["L", "mL", "kg", "g"];
 
 export default function DefensivoForm({ onAdd }) {
   const [form, setForm] = useState({
     nome: "",
+    ncm: "",
     tipo: "Herbicida",
     unidade: "L",
     concentracao: "",
@@ -16,8 +18,27 @@ export default function DefensivoForm({ onAdd }) {
     localizacao: "",
     quantidade: 0,
   });
+  const [tipoLock, setTipoLock] = useState(false); // se o usuário trocar manualmente, não sobrescreve mais
 
-  const set = (k, v) => setForm((s) => ({ ...s, [k]: v }));
+  const set = (k, v) => {
+    setForm((s) => ({ ...s, [k]: v }));
+  };
+
+  const onChangeNcm = (v) => {
+    set("ncm", v);
+    if (!tipoLock) {
+      const { tipo } = inferTipoFromNcm(v, form.nome);
+      set("tipo", tipo);
+    }
+  };
+
+  const onChangeNome = (v) => {
+    set("nome", v);
+    if (!tipoLock && form.ncm) {
+      const { tipo } = inferTipoFromNcm(form.ncm, v);
+      set("tipo", tipo);
+    }
+  };
 
   const submit = (e) => {
     e.preventDefault();
@@ -25,6 +46,7 @@ export default function DefensivoForm({ onAdd }) {
     onAdd?.({
       ...form,
       nome: form.nome.trim(),
+      ncm: form.ncm?.replace(/\D/g, "") || null,
       concentracao: form.concentracao?.trim() || null,
       fabricante: form.fabricante?.trim() || null,
       registro_mapa: form.registro_mapa?.trim() || null,
@@ -32,10 +54,12 @@ export default function DefensivoForm({ onAdd }) {
       localizacao: form.localizacao?.trim() || null,
       quantidade: Number(form.quantidade || 0),
     });
+    // reset
     setForm({
-      nome: "", tipo: "Herbicida", unidade: "L", concentracao: "", fabricante: "",
-      registro_mapa: "", classe_toxica: "", localizacao: "", quantidade: 0,
+      nome: "", ncm: "", tipo: "Herbicida", unidade: "L", concentracao: "",
+      fabricante: "", registro_mapa: "", classe_toxica: "", localizacao: "", quantidade: 0,
     });
+    setTipoLock(false);
   };
 
   return (
@@ -45,11 +69,26 @@ export default function DefensivoForm({ onAdd }) {
       </h2>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <input className="border rounded-lg px-3 py-2" placeholder="Nome"
-          value={form.nome} onChange={(e)=>set("nome", e.target.value)} />
+        <input
+          className="border rounded-lg px-3 py-2"
+          placeholder="Nome"
+          value={form.nome}
+          onChange={(e)=>onChangeNome(e.target.value)}
+        />
 
-        <select className="border rounded-lg px-3 py-2" value={form.tipo}
-          onChange={(e)=>set("tipo", e.target.value)}>
+        <input
+          className="border rounded-lg px-3 py-2"
+          placeholder="NCM (ex.: 38089329)"
+          value={form.ncm}
+          onChange={(e)=>onChangeNcm(e.target.value)}
+        />
+
+        <select
+          className="border rounded-lg px-3 py-2"
+          value={form.tipo}
+          onChange={(e)=>{ set("tipo", e.target.value); setTipoLock(true); }}
+          title={tipoLock ? "Você ajustou manualmente; não sugerirei mais automaticamente" : "Posso sugerir automaticamente a partir do NCM"}
+        >
           {TIPOS.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
 
