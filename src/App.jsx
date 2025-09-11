@@ -325,7 +325,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 p-6">
       {/* Cabeçalho */}
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Almoxarifado</h1>
+        <h1 className="text-3xl font-bold">Fazenda Irmão coragem</h1>
         <div className="flex items-center gap-3">
           <span className="text-gray-600">{user.email}</span>
           <button
