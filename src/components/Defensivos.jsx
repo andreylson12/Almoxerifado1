@@ -63,6 +63,11 @@ export default function Defensivos() {
   const [ajustes, setAjustes] = useState([]);        // histórico de ajustes
   const [loadingAjustes, setLoadingAjustes] = useState(false);
 
+  // ====== Relatório (Entradas -> PDF, sem libs externas) ======
+  const [repIni, setRepIni] = useState("");          // yyyy-mm-dd
+  const [repFim, setRepFim] = useState("");          // yyyy-mm-dd
+  const [repBusy, setRepBusy] = useState(false);
+
   // -------- Carrega lista de defensivos (view de estoque) --------
   const fetchList = async () => {
     setLoading(true);
@@ -86,7 +91,6 @@ export default function Defensivos() {
   const fetchSaidas = async () => {
     setLoadingSaidas(true);
     try {
-      // troque o nome do relacionamento se no seu schema for outro
       const rel = "defensivo_movimentacoes_defensivo_id_fkey";
       const { data, error } = await supabase
         .from("defensivo_movimentacoes")
@@ -139,7 +143,6 @@ export default function Defensivos() {
   };
 
   useEffect(() => { fetchList(); }, []);
-
   useEffect(() => {
     if (subTab === "Saída") fetchSaidas();
     if (subTab === "Inventário") fetchAjustes();
@@ -390,6 +393,150 @@ export default function Defensivos() {
     }
   };
 
+  // ====== Relatório PDF (Entradas) ======
+  const gerarPdfEntradas = async () => {
+    try {
+      setRepBusy(true);
+      const rel = "defensivo_movimentacoes_defensivo_id_fkey";
+
+      let query = supabase
+        .from("defensivo_movimentacoes")
+        .select(
+          `
+          id, created_at, origem, nf_numero, fornecedor, quantidade, unidade, lote, validade, fabricacao,
+          defensivo:defensivos!${rel} ( nome )
+        `
+        )
+        .eq("tipo", "Entrada")
+        .order("created_at", { ascending: true })
+        .limit(1000);
+
+      // Período (opcional) em created_at
+      if (repIni) query = query.gte("created_at", `${repIni}T00:00:00`);
+      if (repFim) query = query.lte("created_at", `${repFim}T23:59:59`);
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const entradas = data || [];
+      if (!entradas.length) {
+        alert("Nenhuma entrada no período selecionado.");
+        return;
+      }
+
+      // Totais por unidade
+      const totalPorUn = entradas.reduce((acc, r) => {
+        const u = r.unidade || "";
+        acc[u] = (acc[u] || 0) + Number(r.quantidade || 0);
+        return acc;
+      }, {});
+
+      // HTML do relatório
+      const hoje = new Date().toLocaleString();
+      const periodo =
+        repIni || repFim
+          ? `${repIni || "…"} a ${repFim || "…"}`
+          : "Todos os registros";
+
+      const linhas = entradas
+        .map((r) => {
+          const data = new Date(r.created_at).toLocaleString();
+          const nf = r.nf_numero || "—";
+          const forn = r.fornecedor || "—";
+          const prod = r.defensivo?.nome || "—";
+          const qtd = `${r.quantidade ?? 0} ${r.unidade || ""}`.trim();
+          const lote = r.lote || "—";
+          const val = r.validade || "—";
+          return `
+            <tr>
+              <td>${data}</td>
+              <td>${nf}</td>
+              <td>${forn}</td>
+              <td>${prod}</td>
+              <td style="text-align:right">${qtd}</td>
+              <td>${lote}</td>
+              <td>${val}</td>
+            </tr>`;
+        })
+        .join("");
+
+      const totaisHtml = Object.entries(totalPorUn)
+        .map(([u, v]) => `<span style="margin-right:16px"><b>Total</b> ${v} ${u}</span>`)
+        .join("");
+
+      const html = `
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Relatório de Entradas - Defensivos</title>
+  <style>
+    * { font-family: Arial, Helvetica, sans-serif; }
+    h1 { font-size: 18px; margin: 0 0 4px 0; }
+    h2 { font-size: 14px; margin: 0 0 16px 0; color: #444; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px; }
+    thead th { background: #f3f4f6; text-align: left; }
+    .meta { font-size: 12px; color: #555; margin: 8px 0 12px; }
+    .totais { margin: 12px 0; font-size: 12px; }
+    .footer { margin-top: 24px; font-size: 11px; color: #666; }
+    @media print {
+      .noprint { display: none; }
+      @page { size: A4 portrait; margin: 14mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="noprint" style="text-align:right;margin-bottom:8px">
+    <button onclick="window.print()">Imprimir / Salvar PDF</button>
+  </div>
+  <h1>Relatório de Entradas - Defensivos</h1>
+  <h2>Período: ${periodo}</h2>
+  <div class="meta">Gerado em: ${hoje}</div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th>NF</th>
+        <th>Fornecedor</th>
+        <th>Produto</th>
+        <th style="text-align:right">Quantidade</th>
+        <th>Lote</th>
+        <th>Validade</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${linhas}
+    </tbody>
+  </table>
+
+  <div class="totais">
+    ${totaisHtml}
+  </div>
+
+  <div class="footer">
+    Origem dos dados: defensivo_movimentacoes (tipo = "Entrada").
+  </div>
+</body>
+</html>`;
+
+      const w = window.open("", "_blank");
+      if (!w) {
+        alert("Bloqueio de pop-up: permita a janela para ver o PDF.");
+        return;
+      }
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+    } catch (err) {
+      console.error(err);
+      alert("Falha ao gerar o relatório.");
+    } finally {
+      setRepBusy(false);
+    }
+  };
+
   // ====== Filtro local da lista (apenas para a aba Entrada) ======
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -417,6 +564,38 @@ export default function Defensivos() {
           </button>
         ))}
       </div>
+
+      {/* Toolbar do relatório (fica naquela faixa ao lado direito) */}
+      {subTab === "Entrada" && (
+        <div className="flex flex-wrap items-end justify-end gap-2">
+          <div className="text-sm text-slate-600 mr-2">Relatório de Entradas:</div>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={repIni}
+              onChange={(e) => setRepIni(e.target.value)}
+              className="border rounded px-2 py-1"
+              title="Data inicial (opcional)"
+            />
+            <span className="text-slate-500">até</span>
+            <input
+              type="date"
+              value={repFim}
+              onChange={(e) => setRepFim(e.target.value)}
+              className="border rounded px-2 py-1"
+              title="Data final (opcional)"
+            />
+            <button
+              onClick={gerarPdfEntradas}
+              disabled={repBusy}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded disabled:opacity-60"
+              title="Gera o relatório e abre a janela de impressão"
+            >
+              {repBusy ? "Gerando..." : "Gerar PDF (Entradas)"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ======= Aba ENTRADA ======= */}
       {subTab === "Entrada" && (
@@ -768,7 +947,6 @@ export default function Defensivos() {
               />
             </div>
 
-            {/* Mostra estoque atual do selecionado */}
             {inv.defensivo_id ? (
               <div className="text-sm text-slate-600">
                 Estoque atual:{" "}
