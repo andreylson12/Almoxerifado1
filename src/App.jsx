@@ -84,7 +84,7 @@ export default function App() {
     setProdLoading(false);
   };
 
-  // 🔄 Carrega dados do Supabase quando usuário está logado
+  // 🔄 Carrega dados quando usuário está logado
   useEffect(() => {
     if (!user) return;
 
@@ -199,7 +199,6 @@ export default function App() {
             .eq("id", payload.produto_id);
 
           if (!estoqueError) {
-            // 🔵 Recarrega a página atual de produtos para refletir o estoque correto
             fetchProdutos(prodPage, search);
           }
         }
@@ -272,10 +271,8 @@ export default function App() {
         .eq("id", mov.id);
       if (delErr) throw delErr;
 
-      // Atualiza estados locais
       setMovimentacoes((prev) => prev.filter((m) => m.id !== mov.id));
-      fetchProdutos(prodPage, search); // mantém lista de produtos coerente
-
+      fetchProdutos(prodPage, search);
       alert("Movimentação excluída com sucesso.");
     } catch (e) {
       console.error("Erro ao excluir movimentação:", e);
@@ -325,7 +322,16 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 p-6">
       {/* Cabeçalho */}
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Fazenda Irmão coragem</h1>
+        <div className="flex items-center gap-3">
+          {/* Logo ao lado do título (arquivo em /public/logo-fazenda.png) */}
+          <img
+            src="/logo-fazenda.png"
+            alt="Logo da fazenda"
+            className="h-10 w-10 rounded-full object-cover ring-1 ring-black/5"
+            onError={(e) => { e.currentTarget.style.display = 'none'; }} // se não achar o arquivo, oculta o <img>
+          />
+          <h1 className="text-3xl font-bold">Fazenda Irmão coragem</h1>
+        </div>
         <div className="flex items-center gap-3">
           <span className="text-gray-600">{user.email}</span>
           <button
@@ -385,7 +391,6 @@ export default function App() {
                     .insert([produtoCorrigido]);
 
                   if (!error) {
-                    // 🔵 Recarrega a listagem (primeira página) para incluir o novo item
                     fetchProdutos(1, search);
                   }
                 } catch (e) {
