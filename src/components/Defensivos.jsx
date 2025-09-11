@@ -21,6 +21,27 @@ function mapTipoByNcm(ncm) {
   return NCM_TO_TIPO[k] || "Outro";
 }
 
+// Normalizadores para CSV
+const normalize = (str = "") =>
+  String(str).replace(/^\uFEFF/, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+const UN_MAP = {
+  "LITROS": "L", "LITRO": "L", "LTS": "L", "LT": "L", "L": "L",
+  "MILILITROS": "mL", "MILILITRO": "mL", "ML": "mL",
+  "QUILOGRAMAS": "KG", "KILOGRAMAS": "KG", "QUILOGRAMA": "KG", "KG": "KG",
+  "GRAMAS": "g", "GRAMA": "g", "G": "g",
+  "UNIDADES": "UN", "UNIDADE": "UN", "UN": "UN",
+};
+const TIPO_MAP = {
+  "HERBICIDA": "Herbicida",
+  "FUNGICIDA": "Fungicida",
+  "INSETICIDA": "Inseticida",
+  "ACARICIDA": "Acaricida",
+  "NEMATICIDA": "Nematicida",
+  "ADJUVANTE": "Adjuvante",
+  "FERTILIZANTE": "Fertilizante",
+};
+
 export default function Defensivos() {
   const [rows, setRows] = useState([]);              // defensivos + estoque (para selects)
   const [q, setQ] = useState("");                    // busca (aba Entrada)
@@ -31,6 +52,10 @@ export default function Defensivos() {
   // ====== XML / Pré-visualização de NF-e ======
   const [preview, setPreview] = useState(null);
   const [busyImport, setBusyImport] = useState(false);
+
+  // ====== CSV (lista física) ======
+  const [csvBusy, setCsvBusy] = useState(false);
+  const [csvLaunchStock, setCsvLaunchStock] = useState(true); // lançar entradas do saldo inicial
 
   // ====== Saída rápida ======
   const [saida, setSaida] = useState({
@@ -148,7 +173,123 @@ export default function Defensivos() {
     if (subTab === "Inventário") fetchAjustes();
   }, [subTab]);
 
-  // ====== Parse do(s) XML ======
+  // ================== IMPORTAÇÃO CSV (lista física) ==================
+  // Detecta separador e quebra em linhas/células simples (sem libs)
+  function parseCSV(text) {
+    const txt = text.replace(/^\uFEFF/, ""); // remove BOM
+    const firstLine = txt.split(/\r?\n/)[0] || "";
+    const semicolons = (firstLine.match(/;/g) || []).length;
+    const commas = (firstLine.match(/,/g) || []).length;
+    const sep = semicolons > commas ? ";" : ",";
+
+    const lines = txt.split(/\r?\n/).filter((l) => l.trim() !== "");
+    if (!lines.length) return { header: [], rows: [] };
+
+    const header = lines[0].split(sep).map((h) => normalize(h).toUpperCase());
+    const rows = lines.slice(1).map((line) => line.split(sep));
+    return { header, rows };
+  }
+
+  async function handlePickCSV(ev) {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setCsvBusy(true);
+      const txt = await file.text();
+      const { header, rows: csvRows } = parseCSV(txt);
+
+      // Mapeia índices de colunas (nome -> posição)
+      // Esperados: PRODUTOS, GRUPO, UNID.MED, SALDO ATUAL/ENTRADAS (nomes toleram acentos e espaços)
+      const idx = {
+        PRODUTOS: header.findIndex((h) => h.replace(/\s+/g, "") === "PRODUTOS"),
+        GRUPO: header.findIndex((h) => h === "GRUPO"),
+        UNID: header.findIndex((h) => h.replace(/\s+/g, "") === "UNID.MED"),
+        SALDO: header.findIndex((h) => h.replace(/\s+/g, "") === "SALDOATUAL/ENTRADAS"),
+      };
+
+      if (idx.PRODUTOS < 0) {
+        alert('CSV inválido: não encontrei a coluna "PRODUTOS".');
+        return;
+      }
+
+      // Constrói registros
+      const items = csvRows
+        .map((cols) => {
+          const nome = (cols[idx.PRODUTOS] || "").trim();
+          if (!nome) return null;
+
+          const grupoRaw = idx.GRUPO >= 0 ? normalize(cols[idx.GRUPO] || "").toUpperCase() : "";
+          const tipo = TIPO_MAP[grupoRaw] || "Outro";
+
+          const unRaw = idx.UNID >= 0 ? normalize(cols[idx.UNID] || "").toUpperCase() : "";
+          const unidade = UN_MAP[unRaw] || (cols[idx.UNID] || "").trim() || null;
+
+          const saldoRaw = idx.SALDO >= 0 ? String(cols[idx.SALDO] || "").trim() : "";
+          const quantidade = toNumber(saldoRaw);
+
+          return { nome, tipo, unidade, quantidade };
+        })
+        .filter(Boolean);
+
+      if (!items.length) {
+        alert("Nenhuma linha válida encontrada no CSV.");
+        return;
+      }
+
+      // 1) Upsert dos defensivos por nome
+      const upserts = items.map((it) => ({
+        nome: it.nome,
+        ncm: null,
+        tipo: it.tipo || "Outro",
+        unidade: it.unidade || null,
+      }));
+
+      const { data: upserted, error: upErr } = await supabase
+        .from("defensivos")
+        .upsert(upserts, { onConflict: "nome" })
+        .select("id, nome");
+
+      if (upErr) throw upErr;
+
+      const idByName = new Map(upserted.map((d) => [d.nome, d.id]));
+
+      // 2) (Opcional) Lançar saldo inicial como entradas (origem Inventário)
+      if (csvLaunchStock) {
+        const movimentos = items
+          .filter((it) => (Number(it.quantidade) || 0) > 0)
+          .map((it) => ({
+            tipo: "Entrada",
+            defensivo_id: idByName.get(it.nome),
+            quantidade: Number(it.quantidade) || 0,
+            unidade: it.unidade || null,
+            origem: "Inventário",
+            observacoes: "Importação CSV (saldo inicial)",
+          }))
+          .filter((m) => m.defensivo_id);
+
+        if (movimentos.length) {
+          const { error: movErr } = await supabase
+            .from("defensivo_movimentacoes")
+            .insert(movimentos);
+          if (movErr) throw movErr;
+
+          try { await supabase.rpc("recalcular_estoque_defensivos"); } catch (_) {}
+        }
+      }
+
+      await fetchList();
+      alert(`Importação concluída: ${upserts.length} produtos atualizados${csvLaunchStock ? " + entradas lançadas." : "."}`);
+    } catch (err) {
+      console.error(err);
+      alert("Falha ao importar CSV.");
+    } finally {
+      setCsvBusy(false);
+      ev.target.value = "";
+    }
+  }
+
+  // ================== IMPORTAÇÃO XML (NF-e) ==================
   const handlePickXML = async (ev) => {
     const files = Array.from(ev.target.files || []);
     if (!files.length) return;
@@ -205,7 +346,6 @@ export default function Defensivos() {
     }
   };
 
-  // ====== Lançar ENTRADAS ======
   const lancarEntradas = async () => {
     if (!preview?.itens?.length) return;
 
@@ -411,7 +551,6 @@ export default function Defensivos() {
         .order("created_at", { ascending: true })
         .limit(1000);
 
-      // Período (opcional) em created_at
       if (repIni) query = query.gte("created_at", `${repIni}T00:00:00`);
       if (repFim) query = query.lte("created_at", `${repFim}T23:59:59`);
 
@@ -424,14 +563,12 @@ export default function Defensivos() {
         return;
       }
 
-      // Totais por unidade
       const totalPorUn = entradas.reduce((acc, r) => {
         const u = r.unidade || "";
         acc[u] = (acc[u] || 0) + Number(r.quantidade || 0);
         return acc;
       }, {});
 
-      // HTML do relatório
       const hoje = new Date().toLocaleString();
       const periodo =
         repIni || repFim
@@ -600,6 +737,7 @@ export default function Defensivos() {
       {/* ======= Aba ENTRADA ======= */}
       {subTab === "Entrada" && (
         <>
+          {/* Importar por XML (NF-e) */}
           <div className="bg-white p-4 rounded-lg shadow flex flex-col gap-3">
             <label className="font-semibold flex items-center gap-2">
               <Upload className="h-4 w-4" />
@@ -679,6 +817,36 @@ export default function Defensivos() {
                 </table>
               </div>
             ) : null}
+          </div>
+
+          {/* Importar por CSV (lista física) */}
+          <div className="bg-white p-4 rounded-lg shadow flex flex-col gap-3">
+            <label className="font-semibold">Importar Lista (CSV)</label>
+            <div className="text-sm text-slate-600">
+              Aceita colunas: <b>CÓDIGO</b> (opcional), <b>PRODUTOS</b>, <b>GRUPO</b>, <b>UNID.MED</b>, <b>SALDO ATUAL/ENTRADAS</b>.
+              Separador “;” ou “,”. Ex.: <i>ASSIST 20 L, INSETICIDA, LITROS, 21</i>.
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handlePickCSV}
+                className="border rounded px-3 py-2"
+              />
+              <label className="text-sm flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={csvLaunchStock}
+                  onChange={(e) => setCsvLaunchStock(e.target.checked)}
+                />
+                Lançar estoque inicial como <b>Entrada</b> (origem: Inventário)
+              </label>
+              {csvBusy && (
+                <span className="inline-flex items-center gap-2 text-slate-600">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Importando…
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Busca + Lista de defensivos */}
