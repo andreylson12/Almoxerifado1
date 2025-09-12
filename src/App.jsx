@@ -11,7 +11,8 @@ import MaquinasTable from "./components/MaquinasTable";
 import FuncionarioForm from "./components/FuncionarioForm";
 import FuncionariosTable from "./components/FuncionariosTable";
 import Inventario from "./components/Inventario";
-import Defensivos from "./components/Defensivos"; // ✅ NOVO
+import Defensivos from "./components/Defensivos";
+import Colheita from "./components/Colheita"; // ✅ NOVO
 
 // 🔵 PAGINAÇÃO PRODUTOS
 const PROD_PAGE_SIZE = 50;
@@ -55,6 +56,7 @@ export default function App() {
   const fetchProdutos = async (page = 1, term = "") => {
     setProdLoading(true);
     const from = (page - 1) * PROD_PAGE_SIZE;
+    the:
     const to = from + PROD_PAGE_SIZE - 1;
 
     let query = supabase
@@ -184,7 +186,7 @@ export default function App() {
         return;
       }
 
-      // Atualiza estoque
+      // Atualiza estoque local
       if (payload.produto_id) {
         const produto = produtos.find((p) => p.id === payload.produto_id);
         if (produto) {
@@ -249,7 +251,6 @@ export default function App() {
         if (prodErr) throw prodErr;
 
         const atual = Number(prod?.quantidade ?? 0);
-        // Entrada excluída => tira do estoque; Saída excluída => devolve ao estoque
         const delta = tipo === "Entrada" ? -Number(quantidade) : Number(quantidade);
         const novo = atual + delta;
 
@@ -273,6 +274,7 @@ export default function App() {
 
       setMovimentacoes((prev) => prev.filter((m) => m.id !== mov.id));
       fetchProdutos(prodPage, search);
+
       alert("Movimentação excluída com sucesso.");
     } catch (e) {
       console.error("Erro ao excluir movimentação:", e);
@@ -284,10 +286,7 @@ export default function App() {
   if (!user) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-100">
-        <form
-          onSubmit={handleLogin}
-          className="bg-white p-6 rounded-xl shadow-lg w-80 space-y-4"
-        >
+        <form onSubmit={handleLogin} className="bg-white p-6 rounded-xl shadow-lg w-80 space-y-4">
           <h2 className="text-xl font-semibold text-center">Login</h2>
           {erro && <p className="text-red-500 text-sm">{erro}</p>}
           <input
@@ -304,10 +303,7 @@ export default function App() {
             onChange={(e) => setSenha(e.target.value)}
             className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-400"
           />
-          <button
-            type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg"
-          >
+          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg">
             Entrar
           </button>
         </form>
@@ -323,21 +319,18 @@ export default function App() {
       {/* Cabeçalho */}
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-3">
-          {/* Logo ao lado do título (arquivo em /public/logo-fazenda.png) */}
           <img
             src="/logo-fazenda.png"
             alt="Logo da fazenda"
             className="h-10 w-10 rounded-full object-cover ring-1 ring-black/5"
-            onError={(e) => { e.currentTarget.style.display = 'none'; }} // se não achar o arquivo, oculta o <img>
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
           />
-          <h1 className="text-3xl font-bold">Fazenda Irmão coragem</h1>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-gray-600">{user.email}</span>
-          <button
-            onClick={handleLogout}
-            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg"
-          >
+          <button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg">
             Sair
           </button>
         </div>
@@ -347,10 +340,11 @@ export default function App() {
         tabs={[
           "Movimentações",
           "Produtos",
-          "Defensivos",   // ✅ NOVO
+          "Defensivos",
           "Inventário",
           "Máquinas",
           "Funcionários",
+          "Colheita", // ✅ NOVO
         ]}
         current={tab}
         onChange={setTab}
@@ -359,12 +353,7 @@ export default function App() {
       <div className="mt-6">
         {tab === "Movimentações" && (
           <>
-            <MovForm
-              produtos={produtos}
-              funcionarios={funcionarios}
-              maquinas={maquinas}
-              onAdd={handleMovimentacao}
-            />
+            <MovForm produtos={produtos} funcionarios={funcionarios} maquinas={maquinas} onAdd={handleMovimentacao} />
             <MovTable data={movimentacoes} onDelete={handleExcluirMovimentacao} />
           </>
         )}
@@ -386,9 +375,7 @@ export default function App() {
                     return;
                   }
 
-                  const { error } = await supabase
-                    .from("produtos")
-                    .insert([produtoCorrigido]);
+                  const { error } = await supabase.from("produtos").insert([produtoCorrigido]);
 
                   if (!error) {
                     fetchProdutos(1, search);
@@ -407,26 +394,14 @@ export default function App() {
               className="border p-2 mt-4 w-full"
             />
 
-            {prodLoading ? (
-              <div className="p-4">Carregando produtos…</div>
-            ) : (
-              <ProdutosTable data={produtos} />
-            )}
+            {prodLoading ? <div className="p-4">Carregando produtos…</div> : <ProdutosTable data={produtos} />}
 
             {/* 🔵 Controles de paginação */}
             <div className="flex flex-wrap items-center gap-2 mt-4">
-              <button
-                onClick={() => fetchProdutos(1, search)}
-                disabled={prodPage === 1}
-                className="px-3 py-1 border rounded disabled:opacity-50"
-              >
+              <button onClick={() => fetchProdutos(1, search)} disabled={prodPage === 1} className="px-3 py-1 border rounded disabled:opacity-50">
                 Primeiro
               </button>
-              <button
-                onClick={() => fetchProdutos(prodPage - 1, search)}
-                disabled={prodPage === 1}
-                className="px-3 py-1 border rounded disabled:opacity-50"
-              >
+              <button onClick={() => fetchProdutos(prodPage - 1, search)} disabled={prodPage === 1} className="px-3 py-1 border rounded disabled:opacity-50">
                 Anterior
               </button>
               <span className="px-2">
@@ -469,10 +444,7 @@ export default function App() {
                     return;
                   }
 
-                  const { data, error } = await supabase
-                    .from("maquinas")
-                    .insert([maquinaCorrigida])
-                    .select();
+                  const { data, error } = await supabase.from("maquinas").insert([maquinaCorrigida]).select();
 
                   if (!error) setMaquinas((prev) => [...prev, ...data]);
                 } catch (e) {
@@ -499,10 +471,7 @@ export default function App() {
                     return;
                   }
 
-                  const { data, error } = await supabase
-                    .from("funcionarios")
-                    .insert([funcionarioCorrigido])
-                    .select();
+                  const { data, error } = await supabase.from("funcionarios").insert([funcionarioCorrigido]).select();
 
                   if (!error) setFuncionarios((prev) => [...prev, ...data]);
                 } catch (e) {
@@ -513,6 +482,8 @@ export default function App() {
             <FuncionariosTable data={funcionarios} />
           </>
         )}
+
+        {tab === "Colheita" && <Colheita />}{/* ✅ NOVO */}
       </div>
     </div>
   );
