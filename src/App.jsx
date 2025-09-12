@@ -56,7 +56,6 @@ export default function App() {
   const fetchProdutos = async (page = 1, term = "") => {
     setProdLoading(true);
     const from = (page - 1) * PROD_PAGE_SIZE;
-    the:
     const to = from + PROD_PAGE_SIZE - 1;
 
     let query = supabase
