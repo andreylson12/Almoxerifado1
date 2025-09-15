@@ -239,7 +239,6 @@ export default function App() {
       );
       if (!ok) return;
 
-      // Garante que temos os campos essenciais
       let movimento = mov;
       if (
         movimento.produto_id === undefined ||
@@ -257,7 +256,6 @@ export default function App() {
 
       const { produto_id, tipo, quantidade } = movimento;
 
-      // Se houver produto vinculado, reverte o estoque
       if (produto_id) {
         const { data: prod, error: prodErr } = await supabase
           .from("produtos")
@@ -281,7 +279,6 @@ export default function App() {
         if (upErr) throw upErr;
       }
 
-      // Remove a movimentação
       const { error: delErr } = await supabase
         .from("movimentacoes")
         .delete()
@@ -332,7 +329,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      {/* Fazenda Irmão coragem*/}
+      {/* Cabeçalho com logo + nome */}
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-3">
           <img
@@ -343,6 +340,9 @@ export default function App() {
               e.currentTarget.style.display = "none";
             }}
           />
+          <h1 className="text-2xl md:text-3xl font-bold">
+            Fazenda Irmão coragem
+          </h1>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-gray-600">{user.email}</span>
