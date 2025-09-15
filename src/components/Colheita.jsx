@@ -12,7 +12,7 @@ export default function Colheita() {
   // dados
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [deletingId, setDeletingId] = useState(null); // ⬅ controle de exclusão por linha
+  const [deletingId, setDeletingId] = useState(null); // controle de exclusão por linha
 
   // form novo registro
   const [form, setForm] = useState({
@@ -31,7 +31,6 @@ export default function Colheita() {
 
   // config de sacas (p/ média sc/ha)
   const [kgPorSaca, setKgPorSaca] = useState(60);
-
   const setF = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
   const fetchCargas = async () => {
@@ -59,9 +58,7 @@ export default function Colheita() {
     }
   };
 
-  useEffect(() => {
-    fetchCargas();
-  }, []);
+  useEffect(() => { fetchCargas(); }, []);
 
   const addCarga = async () => {
     try {
@@ -109,7 +106,7 @@ export default function Colheita() {
     }
   };
 
-  // ⬇️ NOVO: excluir uma carga
+  // Excluir uma carga
   const deleteCarga = async (row) => {
     if (!row?.id) return;
     const ok = window.confirm(`Excluir o lançamento do ticket "${row.ticket || row.id}"?`);
@@ -121,19 +118,19 @@ export default function Colheita() {
         .from("colheita_cargas")
         .delete()
         .eq("id", row.id);
-
       if (error) throw error;
 
-      // remoção otimista da tabela em tela
+      // remove da tela sem recarregar tudo
       setRows((prev) => prev.filter((r) => r.id !== row.id));
     } catch (err) {
       console.error(err);
-      alert("Não foi possível excluir. Verifique permissões RLS e tente de novo.");
+      alert("Não foi possível excluir. Verifique permissões RLS no Supabase.");
     } finally {
       setDeletingId(null);
     }
   };
 
+  // filtros e totais
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       if (from && r.data < from) return false;
@@ -144,7 +141,6 @@ export default function Colheita() {
     });
   }, [rows, from, to, fCultura, fTalhao]);
 
-  // cálculos
   const liq = (r) => Math.max(0, Number(r.peso_bruto_kg || 0) - Number(r.tara_kg || 0));
   const totBruto = filtered.reduce((s, r) => s + Number(r.peso_bruto_kg || 0), 0);
   const totTara  = filtered.reduce((s, r) => s + Number(r.tara_kg || 0), 0);
@@ -272,6 +268,7 @@ export default function Colheita() {
         <table className="w-full bg-white">
           <thead className="bg-slate-100">
             <tr>
+              <th className="p-2 text-left w-32">Ações</th>{/* PRIMEIRA COLUNA */}
               <th className="p-2 text-left">Data</th>
               <th className="p-2 text-left">Cultura</th>
               <th className="p-2 text-left">Talhão</th>
@@ -283,7 +280,6 @@ export default function Colheita() {
               <th className="p-2 text-right">Líquido (kg)</th>
               <th className="p-2 text-left">Destino</th>
               <th className="p-2 text-left">Ticket</th>
-              <th className="p-2 text-left">Ações</th>{/* ⬅️ NOVO */}
             </tr>
           </thead>
           <tbody>
@@ -304,17 +300,6 @@ export default function Colheita() {
             ) : (
               filtered.map((r) => (
                 <tr key={r.id} className="border-t">
-                  <td className="p-2">{r.data}</td>
-                  <td className="p-2">{r.cultura || "—"}</td>
-                  <td className="p-2">{r.talhao || "—"}</td>
-                  <td className="p-2">{r.area_total_ha ?? "—"}</td>
-                  <td className="p-2">{r.placa || "—"}</td>
-                  <td className="p-2">{r.motorista || "—"}</td>
-                  <td className="p-2 text-right">{Number(r.peso_bruto_kg || 0).toLocaleString()}</td>
-                  <td className="p-2 text-right">{Number(r.tara_kg || 0).toLocaleString()}</td>
-                  <td className="p-2 text-right">{liq(r).toLocaleString()}</td>
-                  <td className="p-2">{r.destino || "—"}</td>
-                  <td className="p-2">{r.ticket || "—"}</td>
                   <td className="p-2">
                     <button
                       onClick={() => deleteCarga(r)}
@@ -335,6 +320,17 @@ export default function Colheita() {
                       )}
                     </button>
                   </td>
+                  <td className="p-2">{r.data}</td>
+                  <td className="p-2">{r.cultura || "—"}</td>
+                  <td className="p-2">{r.talhao || "—"}</td>
+                  <td className="p-2">{r.area_total_ha ?? "—"}</td>
+                  <td className="p-2">{r.placa || "—"}</td>
+                  <td className="p-2">{r.motorista || "—"}</td>
+                  <td className="p-2 text-right">{Number(r.peso_bruto_kg || 0).toLocaleString()}</td>
+                  <td className="p-2 text-right">{Number(r.tara_kg || 0).toLocaleString()}</td>
+                  <td className="p-2 text-right">{liq(r).toLocaleString()}</td>
+                  <td className="p-2">{r.destino || "—"}</td>
+                  <td className="p-2">{r.ticket || "—"}</td>
                 </tr>
               ))
             )}
