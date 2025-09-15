@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
-import { Loader2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 
 export default function Colheita() {
   // filtros
@@ -12,6 +12,7 @@ export default function Colheita() {
   // dados
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState(null); // ⬅ controle de exclusão por linha
 
   // form novo registro
   const [form, setForm] = useState({
@@ -28,8 +29,9 @@ export default function Colheita() {
     observacoes: "",
   });
 
-  // kg por saca p/ média sc/ha
+  // config de sacas (p/ média sc/ha)
   const [kgPorSaca, setKgPorSaca] = useState(60);
+
   const setF = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
   const fetchCargas = async () => {
@@ -107,6 +109,31 @@ export default function Colheita() {
     }
   };
 
+  // ⬇️ NOVO: excluir uma carga
+  const deleteCarga = async (row) => {
+    if (!row?.id) return;
+    const ok = window.confirm(`Excluir o lançamento do ticket "${row.ticket || row.id}"?`);
+    if (!ok) return;
+
+    try {
+      setDeletingId(row.id);
+      const { error } = await supabase
+        .from("colheita_cargas")
+        .delete()
+        .eq("id", row.id);
+
+      if (error) throw error;
+
+      // remoção otimista da tabela em tela
+      setRows((prev) => prev.filter((r) => r.id !== row.id));
+    } catch (err) {
+      console.error(err);
+      alert("Não foi possível excluir. Verifique permissões RLS e tente de novo.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       if (from && r.data < from) return false;
@@ -117,15 +144,12 @@ export default function Colheita() {
     });
   }, [rows, from, to, fCultura, fTalhao]);
 
-  // liquido no front (bruto - tara)
+  // cálculos
   const liq = (r) => Math.max(0, Number(r.peso_bruto_kg || 0) - Number(r.tara_kg || 0));
-
-  // totais
   const totBruto = filtered.reduce((s, r) => s + Number(r.peso_bruto_kg || 0), 0);
   const totTara  = filtered.reduce((s, r) => s + Number(r.tara_kg || 0), 0);
   const totLiq   = filtered.reduce((s, r) => s + liq(r), 0);
 
-  // área de referência (maior informada no filtro, senão a do form)
   const areaRef =
     (Math.max(0, ...filtered.map((r) => Number(r.area_total_ha || 0))) || 0) ||
     Number(form.area_total_ha || 0) ||
@@ -197,7 +221,7 @@ export default function Colheita() {
         </div>
       </div>
 
-      {/* Formulário */}
+      {/* Formulário de lançamento */}
       <div className="bg-white p-4 rounded-lg shadow space-y-3">
         <h3 className="font-semibold">Lançar carga</h3>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -243,7 +267,7 @@ export default function Colheita() {
         </div>
       </div>
 
-      {/* Tabela */}
+      {/* Tabela de cargas */}
       <div className="overflow-x-auto rounded-lg shadow">
         <table className="w-full bg-white">
           <thead className="bg-slate-100">
@@ -259,19 +283,24 @@ export default function Colheita() {
               <th className="p-2 text-right">Líquido (kg)</th>
               <th className="p-2 text-left">Destino</th>
               <th className="p-2 text-left">Ticket</th>
+              <th className="p-2 text-left">Ações</th>{/* ⬅️ NOVO */}
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td className="p-4 text-center" colSpan={11}>
+                <td className="p-4 text-center" colSpan={12}>
                   <span className="inline-flex items-center gap-2 text-slate-600">
                     <Loader2 className="h-4 w-4 animate-spin" /> Carregando…
                   </span>
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
-              <tr><td className="p-4 text-center text-slate-500" colSpan={11}>Nenhuma carga.</td></tr>
+              <tr>
+                <td className="p-4 text-center text-slate-500" colSpan={12}>
+                  Nenhuma carga.
+                </td>
+              </tr>
             ) : (
               filtered.map((r) => (
                 <tr key={r.id} className="border-t">
@@ -286,6 +315,26 @@ export default function Colheita() {
                   <td className="p-2 text-right">{liq(r).toLocaleString()}</td>
                   <td className="p-2">{r.destino || "—"}</td>
                   <td className="p-2">{r.ticket || "—"}</td>
+                  <td className="p-2">
+                    <button
+                      onClick={() => deleteCarga(r)}
+                      disabled={deletingId === r.id}
+                      className="inline-flex items-center gap-1 text-red-600 hover:bg-red-50 px-2 py-1 rounded disabled:opacity-50"
+                      title="Excluir lançamento"
+                    >
+                      {deletingId === r.id ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Excluindo…
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="h-4 w-4" />
+                          Excluir
+                        </>
+                      )}
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
