@@ -1,467 +1,489 @@
-// server.js – Railway + PIX + Produtos/Pedidos + Telegram + (opcional) Web Push + Backup/Restore
-const express = require("express");
-const fs = require("fs");
-const path = require("path");
-const cors = require("cors");
-const { QrCodePix } = require("qrcode-pix");
+import { useState, useEffect } from "react";
+import { supabase } from "./supabaseClient";
 
-// web-push é opcional; só é usado se VAPID_* estiverem definidos
-let webpush = null;
-try { webpush = require("web-push"); } catch { /* opcional */ }
+import Tabs from "./components/Tabs";
+import MovForm from "./components/MovForm";
+import MovTable from "./components/MovTable";
+import ProdutoForm from "./components/ProdutoForm";
+import ProdutosTable from "./components/ProdutosTable";
+import MaquinaForm from "./components/MaquinaForm";
+import MaquinasTable from "./components/MaquinasTable";
+import FuncionarioForm from "./components/FuncionarioForm";
+import FuncionariosTable from "./components/FuncionariosTable";
+import Inventario from "./components/Inventario";
+import Defensivos from "./components/Defensivos";
+import Colheita from "./components/Colheita"; // ✅ NOVO
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+// 🔵 PAGINAÇÃO PRODUTOS
+const PROD_PAGE_SIZE = 50;
 
-/* -------------------------------- Middlewares -------------------------------- */
-// aceita até ~5MB de JSON (para restore)
-app.use(express.json({ limit: "5mb" }));
-app.use(
-  cors({
-    origin: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    credentials: true,
-  })
-);
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [tab, setTab] = useState("Movimentações");
 
-/* ------------------------------ Arquivos estáticos --------------------------- */
-app.use(express.static(path.join(__dirname, "public")));
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
+  const [erro, setErro] = useState("");
 
-app.get(["/", "/index", "/index.html"], (_req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-app.get(["/delivery", "/delivery.html"], (_req, res) => {
-  res.sendFile(path.join(__dirname, "public", "delivery.html"));
-});
+  const [produtos, setProdutos] = useState([]);
+  const [maquinas, setMaquinas] = useState([]);
+  const [funcionarios, setFuncionarios] = useState([]);
+  const [movimentacoes, setMovimentacoes] = useState([]);
 
-app.get("/health", (_req, res) => res.json({ ok: true }));
+  const [search, setSearch] = useState("");
 
-/* ------------------------------- Banco em arquivo ---------------------------- */
-// Use DB_FILE=/data/db.json no Railway (com Volume montado em /data)
-const DB_FILE = process.env.DB_FILE || path.join(__dirname, "db.json");
+  // 🔵 PAGINAÇÃO PRODUTOS - estados
+  const [prodPage, setProdPage] = useState(1);
+  const [prodTotal, setProdTotal] = useState(0);
+  const [prodLoading, setProdLoading] = useState(false);
 
-// Garante que a pasta do banco existe
-const dbDir = path.dirname(DB_FILE);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
-
-function ensureDBShape(db) {
-  db = db && typeof db === "object" ? db : {};
-  db.produtos = Array.isArray(db.produtos) ? db.produtos : [];
-  db.pedidos  = Array.isArray(db.pedidos)  ? db.pedidos  : [];
-  db.pushSubs = Array.isArray(db.pushSubs) ? db.pushSubs : [];
-  return db;
-}
-
-function loadDB() {
-  try {
-    if (!fs.existsSync(DB_FILE)) {
-      const blank = ensureDBShape({});
-      fs.writeFileSync(DB_FILE, JSON.stringify(blank, null, 2));
-      return blank;
-    }
-    const raw = fs.readFileSync(DB_FILE, "utf8");
-    const parsed = JSON.parse(raw);
-    return ensureDBShape(parsed);
-  } catch (err) {
-    console.warn("[db] erro ao ler/parsear, recriando arquivo:", err?.message);
-    const blank = ensureDBShape({});
-    fs.writeFileSync(DB_FILE, JSON.stringify(blank, null, 2));
-    return blank;
-  }
-}
-
-function saveDB(db) {
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(ensureDBShape(db), null, 2));
-  } catch (err) {
-    console.error("[db] erro ao salvar:", err?.message);
-  }
-}
-
-/* -------------------------------- Config PIX -------------------------------- */
-const chavePix = "99 991842200";     // <- sua chave telefone
-const nomeLoja = "ANDREYLSON SODRE";
-const cidade   = "SAMBAIBA";
-
-/* ----------------------------- Push Web (opcional) --------------------------- */
-const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY  || "";
-const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || "";
-const VAPID_SUBJECT = process.env.VAPID_SUBJECT     || "mailto:suporte@exemplo.com";
-
-if (webpush && VAPID_PUBLIC && VAPID_PRIVATE) {
-  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
-} else if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
-  console.warn("[web-push] sem VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY — recurso de push web ficará inativo.");
-}
-
-/** Envia notificação web para todos inscritos; ignora se não houver VAPID/chaves */
-async function sendPushToAll(title, body, data = {}) {
-  if (!webpush || !VAPID_PUBLIC || !VAPID_PRIVATE) return;
-
-  const db = loadDB();
-  const subs = db.pushSubs || [];
-  if (subs.length === 0) return;
-
-  const payload = JSON.stringify({ title, body, data });
-  const stillValid = [];
-
-  await Promise.all(
-    subs.map(async (sub) => {
-      try {
-        await webpush.sendNotification(sub, payload);
-        stillValid.push(sub);
-      } catch (err) {
-        // 404/410 -> assinatura expirada/inválida
-        console.warn("[push] assinatura removida:", err?.statusCode);
-      }
-    })
-  );
-
-  if (stillValid.length !== subs.length) {
-    db.pushSubs = stillValid;
-    saveDB(db);
-  }
-}
-
-/* --------------------------- Rotas de Push (opcional) ----------------------- */
-app.get("/api/push/public-key", (_req, res) => {
-  res.json({ publicKey: VAPID_PUBLIC || "" });
-});
-
-app.post("/api/push/subscribe", (req, res) => {
-  try {
-    const sub = req.body; // { endpoint, keys:{p256dh, auth} }
-    if (!sub?.endpoint) return res.status(400).json({ error: "assinatura inválida" });
-
-    const db = loadDB();
-    const exists = db.pushSubs.some((s) => s.endpoint === sub.endpoint);
-    if (!exists) db.pushSubs.push(sub);
-    saveDB(db);
-
-    res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "falha ao salvar assinatura" });
-  }
-});
-
-app.post("/api/push/unsubscribe", (req, res) => {
-  try {
-    const { endpoint } = req.body || {};
-    if (!endpoint) return res.status(400).json({ error: "endpoint ausente" });
-    const db = loadDB();
-    db.pushSubs = (db.pushSubs || []).filter((s) => s.endpoint !== endpoint);
-    saveDB(db);
-    res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "falha ao remover assinatura" });
-  }
-});
-
-/* ----------------------- Telegram (notificação confiável) ------------------- */
-// usa fetch nativo do Node 18+; com fallback leve para node-fetch se necessário
-const _fetch = (...args) =>
-  (globalThis.fetch
-    ? globalThis.fetch(...args)
-    : import("node-fetch").then((m) => m.default(...args)));
-
-const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-const TG_CHAT  = process.env.TELEGRAM_CHAT_ID    || "";
-
-/** Envia mensagem de texto ao Telegram; ignora se não configurado */
-async function sendTelegramMessage(text) {
-  try {
-    if (!TG_TOKEN || !TG_CHAT) return;
-    const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`;
-    await _fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: TG_CHAT, text, parse_mode: "HTML" }),
-    });
-  } catch (e) {
-    console.warn("[telegram] falhou:", e?.message);
-  }
-}
-
-/* -------------------------------- API PIX ----------------------------------- */
-app.get("/api/chave-pix", (_req, res) => {
-  res.json({ chave: chavePix, nome: nomeLoja, cidade });
-});
-
-app.get("/api/pix/:valor/:txid?", async (req, res) => {
-  try {
-    const raw = String(req.params.valor).replace(",", ".");
-    const valor = Number(raw);
-    if (!Number.isFinite(valor) || valor < 0.01) {
-      return res.status(400).json({ error: "Valor inválido (mínimo 0,01)" });
-    }
-    const txid = (req.params.txid || "PIX" + Date.now()).slice(0, 25);
-
-    const qrCodePix = QrCodePix({
-      version: "01",
-      key: chavePix,
-      name: nomeLoja,
-      city: cidade,
-      transactionId: txid,
-      value: Number(valor.toFixed(2)),
+  // 🔐 Controle de autenticação Supabase
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null);
     });
 
-    const payload = qrCodePix.payload().replace(/\s+/g, "");
-    const qrCodeImage = await qrCodePix.base64();
-
-    res.set("Cache-Control", "no-store");
-    res.json({ payload, qrCodeImage, txid, chave: chavePix });
-  } catch (err) {
-    console.error("Erro ao gerar PIX:", err);
-    res.status(500).json({ error: "Falha ao gerar QR Code PIX" });
-  }
-});
-
-/* ------------------------------- Produtos ----------------------------------- */
-app.get("/api/produtos", (_req, res) => {
-  const db = loadDB();
-  res.json(db.produtos);
-});
-
-app.post("/api/produtos", (req, res) => {
-  const db = loadDB();
-  const novo = { ...req.body, id: Date.now() };
-  db.produtos.push(novo);
-  saveDB(db);
-  res.json(novo);
-});
-
-app.delete("/api/produtos/:id", (req, res) => {
-  const db = loadDB();
-  const id = Number(req.params.id);
-  db.produtos = db.produtos.filter((p) => p.id !== id);
-  saveDB(db);
-  res.json({ success: true });
-});
-
-/* -------------------------------- Pedidos ----------------------------------- */
-app.get("/api/pedidos", (_req, res) => {
-  const db = loadDB();
-  res.json(db.pedidos);
-});
-
-app.get("/api/pedidos/:id", (req, res) => {
-  const db = loadDB();
-  const id = Number(req.params.id);
-  const pedido = db.pedidos.find((p) => p.id === id);
-  if (!pedido) return res.status(404).json({ error: "Pedido não encontrado" });
-  res.json(pedido);
-});
-
-app.post("/api/pedidos", async (req, res) => {
-  const db = loadDB();
-  const pedido = { ...req.body, id: Date.now(), status: "Pendente" };
-
-  // baixa estoque com segurança
-  if (Array.isArray(pedido.itens) && db.produtos.length) {
-    for (const prod of db.produtos) {
-      const item = pedido.itens.find((i) => i.id === prod.id);
-      if (item) {
-        prod.estoque = Math.max(
-          0,
-          Number(prod.estoque || 0) - Number(item.quantidade || 0)
-        );
-      }
-    }
-  }
-
-  // gera PIX
-  try {
-    const rawTotal = String(pedido.total).replace(",", ".");
-    const valor = Number(rawTotal);
-    if (!Number.isFinite(valor) || valor < 0.01) throw new Error("Valor do pedido inválido");
-
-    const txid = ("PED" + pedido.id).slice(0, 25);
-    const qrCodePix = QrCodePix({
-      version: "01",
-      key: chavePix,
-      name: nomeLoja,
-      city: cidade,
-      transactionId: txid,
-      value: Number(valor.toFixed(2)),
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
     });
 
-    pedido.pix = {
-      payload: qrCodePix.payload().replace(/\s+/g, ""),
-      qrCodeImage: await qrCodePix.base64(),
-      txid,
-      chave: chavePix,
+    return () => {
+      listener.subscription.unsubscribe();
     };
-  } catch (err) {
-    console.error("Erro ao gerar PIX do pedido:", err);
-    pedido.pix = null;
-  }
+  }, []);
 
-  db.pedidos.push(pedido);
-  saveDB(db);
+  // 🔵 PAGINAÇÃO PRODUTOS - função de busca remota
+  const fetchProdutos = async (page = 1, term = "") => {
+    setProdLoading(true);
+    const from = (page - 1) * PROD_PAGE_SIZE;
+    const to = from + PROD_PAGE_SIZE - 1;
 
-  // Notificação por Telegram (confiável em 2º plano)
-  const nome = pedido?.cliente?.nome || "Cliente";
-  const endereco = pedido?.cliente?.endereco || "-";
-  const itensTxt = (pedido.itens || [])
-    .map((i) => `${i.nome} x${i.quantidade}`)
-    .join(", ");
-  const totalBR = Number(pedido.total).toFixed(2).replace(".", ",");
+    let query = supabase
+      .from("produtos")
+      .select("*", { count: "exact" })
+      .order("id", { ascending: true })
+      .range(from, to);
 
-  sendTelegramMessage(
-    `📦 <b>Novo pedido</b>\n` +
-      `#${pedido.id}\n` +
-      `👤 ${nome}\n` +
-      `📍 ${endereco}\n` +
-      `🧾 ${itensTxt || "-"}\n` +
-      `💰 R$ ${totalBR}\n` +
-      `${pedido.pix ? "💳 PIX" : "💵 Outro"}`
-  ).catch(() => {});
-
-  // Push Web (opcional)
-  sendPushToAll("Novo pedido!", `#${pedido.id} · ${nome} · R$ ${totalBR}`, {
-    id: pedido.id,
-  }).catch(() => {});
-
-  res.json(pedido);
-});
-
-app.put("/api/pedidos/:id/status", (req, res) => {
-  const db = loadDB();
-  const id = Number(req.params.id);
-  const pedido = db.pedidos.find((p) => p.id === id);
-  if (!pedido) return res.status(404).json({ error: "Pedido não encontrado" });
-
-  pedido.status = req.body.status || pedido.status;
-  saveDB(db);
-
-  // opcional: avisar mudança de status no Telegram
-  sendTelegramMessage(`🔔 Pedido #${id} atualizado para: <b>${pedido.status}</b>`).catch(() => {});
-  res.json(pedido);
-});
-
-app.delete("/api/pedidos/:id", (req, res) => {
-  const db = loadDB();
-  const id = Number(req.params.id);
-  db.pedidos = db.pedidos.filter((p) => p.id !== id);
-  saveDB(db);
-  res.json({ success: true });
-});
-
-/* ---------------- Debug/Backup/Restore (protegidos por token) --------------- */
-const DEBUG_TOKEN = process.env.DEBUG_TOKEN || "segredo123"; // defina no Railway
-
-// GET /api/debug-db?token=...
-app.get("/api/debug-db", (req, res) => {
-  const token = req.query.token;
-  if (token !== DEBUG_TOKEN) {
-    return res.status(403).json({ error: "Acesso negado. Forneça o token correto." });
-  }
-  try {
-    const db = loadDB();
-    res.json(db);
-  } catch (e) {
-    res.status(500).json({ error: "Erro ao ler DB", details: e.message });
-  }
-});
-
-// GET /api/backup?token=...
-app.get("/api/backup", (req, res) => {
-  const token = req.query.token;
-  if (token !== DEBUG_TOKEN) {
-    return res.status(403).json({ error: "Acesso negado. Token inválido." });
-  }
-  try {
-    const db = loadDB();
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    res.setHeader("Content-Disposition", `attachment; filename=db-backup-${ts}.json`);
-    res.setHeader("Content-Type", "application/json");
-    res.send(JSON.stringify(db, null, 2));
-  } catch (err) {
-    res.status(500).json({ error: "Erro ao gerar backup", detalhe: err.message });
-  }
-});
-
-// POST /api/restore?token=...&mode=replace|merge
-// Body deve ser o próprio conteúdo JSON do db (produtos, pedidos, pushSubs)
-app.post("/api/restore", (req, res) => {
-  const token = req.query.token;
-  if (token !== DEBUG_TOKEN) {
-    return res.status(403).json({ error: "Acesso negado. Token inválido." });
-  }
-
-  // aceita { ...db } ou { db: { ... } }
-  const incoming = req.body?.db && typeof req.body.db === "object" ? req.body.db : req.body;
-  const data = ensureDBShape(incoming);
-
-  // validação simples
-  if (!Array.isArray(data.produtos) || !Array.isArray(data.pedidos) || !Array.isArray(data.pushSubs)) {
-    return res.status(400).json({ error: "Formato inválido. Esperado objeto com produtos[], pedidos[], pushSubs[]." });
-  }
-
-  const mode = String(req.query.mode || "replace").toLowerCase(); // replace | merge
-
-  try {
-    const current = loadDB();
-
-    // backup de segurança do arquivo atual
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const backupPath = DB_FILE + ".bak-" + ts;
-    fs.copyFileSync(DB_FILE, backupPath);
-
-    let finalDB;
-
-    if (mode === "merge") {
-      // mescla por id nos arrays produtos/pedidos; pushSubs concat/uniq por endpoint
-      const byId = (arr) => Object.fromEntries((arr || []).map(x => [String(x.id), x]));
-      const mergeById = (base, inc) => {
-        const map = byId(base);
-        for (const item of inc || []) {
-          const k = String(item.id);
-          map[k] = item; // incoming vence
-        }
-        return Object.values(map);
-      };
-
-      const uniqBy = (arr, keyFn) => {
-        const seen = new Set();
-        const out = [];
-        for (const v of arr || []) {
-          const k = keyFn(v);
-          if (!seen.has(k)) { seen.add(k); out.push(v); }
-        }
-        return out;
-      };
-
-      finalDB = {
-        produtos: mergeById(current.produtos, data.produtos),
-        pedidos:  mergeById(current.pedidos,  data.pedidos),
-        pushSubs: uniqBy([...(current.pushSubs||[]), ...(data.pushSubs||[])], s => s?.endpoint || JSON.stringify(s))
-      };
-
-    } else { // replace (padrão)
-      finalDB = data;
+    if (term && term.trim()) {
+      query = supabase
+        .from("produtos")
+        .select("*", { count: "exact" })
+        .ilike("nome", `%${term.trim()}%`)
+        .order("id", { ascending: true })
+        .range(from, to);
     }
 
-    saveDB(finalDB);
-    res.json({
-      ok: true,
-      mode,
-      counts: {
-        produtos: finalDB.produtos.length,
-        pedidos:  finalDB.pedidos.length,
-        pushSubs: finalDB.pushSubs.length,
-      },
-      backup: path.basename(backupPath),
-    });
-  } catch (err) {
-    res.status(500).json({ error: "Erro ao restaurar", detalhe: err.message });
-  }
-});
+    const { data, error, count } = await query;
 
-/* --------------------------------- Start ------------------------------------ */
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
+    if (error) {
+      console.error("Erro ao carregar produtos:", error);
+    } else {
+      setProdutos(data || []);
+      setProdTotal(count || 0);
+      setProdPage(page);
+    }
+    setProdLoading(false);
+  };
+
+  // 🔄 Carrega dados quando usuário está logado
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchOthers = async () => {
+      const { data: maquinasData } = await supabase.from("maquinas").select("*");
+      const { data: funcionariosData } = await supabase.from("funcionarios").select("*");
+      const { data: movsData } = await supabase
+        .from("movimentacoes")
+        .select(
+          `
+          *,
+          produtos (nome, localizacao),
+          funcionarios (nome),
+          maquinas (identificacao)
+        `
+        )
+        .order("created_at", { ascending: false });
+
+      setMaquinas(maquinasData || []);
+      setFuncionarios(funcionariosData || []);
+      setMovimentacoes(movsData || []);
+    };
+
+    // Produtos paginados + demais tabelas
+    fetchProdutos(1, search);
+    fetchOthers();
+  }, [user]);
+
+  // 🔵 Pesquisar produtos (busca remota, pega desde a página 1)
+  useEffect(() => {
+    if (!user) return;
+    fetchProdutos(1, search);
+  }, [search, user]);
+
+  // 🔐 Login
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setErro("");
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password: senha,
+    });
+
+    if (error) {
+      setErro("Erro ao fazer login: " + error.message);
+    } else {
+      setUser(data.user);
+    }
+  };
+
+  // 🔐 Logout
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
+  // ➕ Salvar movimentação
+  const handleMovimentacao = async (mov) => {
+    try {
+      const prodId = mov.produtoId ?? null;
+      const funcId = mov.funcionarioId ?? null;
+      const maqId = mov.maquinaId ?? null;
+
+      if (mov.tipo === "Saida" && prodId) {
+        const produtoAtual = produtos.find((p) => p.id === prodId);
+        if (produtoAtual && Number(produtoAtual.quantidade ?? 0) < Number(mov.quantidade ?? 0)) {
+          alert("Estoque insuficiente para essa saída.");
+          return;
+        }
+      }
+
+      const payload = {
+        tipo: mov.tipo,
+        produto_id: prodId,
+        funcionario_id: funcId,
+        maquina_id: maqId,
+        quantidade: Number(mov.quantidade ?? 0),
+        atividade: mov.atividade ?? null,
+      };
+
+      const { data, error } = await supabase
+        .from("movimentacoes")
+        .insert([payload])
+        .select(
+          `
+          *,
+          produtos (nome, localizacao),
+          funcionarios (nome),
+          maquinas (identificacao)
+        `
+        );
+
+      if (error) {
+        console.error("❌ Erro ao salvar movimentação:", error);
+        alert("Erro ao salvar movimentação: " + (error.message || JSON.stringify(error)));
+        return;
+      }
+
+      // Atualiza estoque local
+      if (payload.produto_id) {
+        const produto = produtos.find((p) => p.id === payload.produto_id);
+        if (produto) {
+          const novoEstoque =
+            payload.tipo === "Entrada"
+              ? Number(produto.quantidade ?? 0) + payload.quantidade
+              : Number(produto.quantidade ?? 0) - payload.quantidade;
+
+          const { error: estoqueError } = await supabase
+            .from("produtos")
+            .update({ quantidade: novoEstoque })
+            .eq("id", payload.produto_id);
+
+          if (!estoqueError) {
+            fetchProdutos(prodPage, search);
+          }
+        }
+      }
+
+      setMovimentacoes((prev) => [data[0], ...prev]);
+    } catch (e) {
+      console.error("‼️ Exceção ao salvar movimentação:", e);
+      alert("Falha ao salvar movimentação: " + e.message);
+    }
+  };
+
+  // 🗑️ Excluir movimentação (com reversão de estoque)
+  const handleExcluirMovimentacao = async (mov) => {
+    try {
+      if (!mov?.id) return alert("Movimentação inválida.");
+
+      const ok = window.confirm(
+        "Excluir esta movimentação? O estoque será ajustado automaticamente."
+      );
+      if (!ok) return;
+
+      // Garante que temos os campos essenciais
+      let movimento = mov;
+      if (
+        movimento.produto_id === undefined ||
+        movimento.quantidade === undefined ||
+        movimento.tipo === undefined
+      ) {
+        const { data: row, error } = await supabase
+          .from("movimentacoes")
+          .select("id, tipo, produto_id, quantidade")
+          .eq("id", mov.id)
+          .single();
+        if (error) throw error;
+        movimento = row;
+      }
+
+      const { produto_id, tipo, quantidade } = movimento;
+
+      // Se houver produto vinculado, reverte o estoque
+      if (produto_id) {
+        const { data: prod, error: prodErr } = await supabase
+          .from("produtos")
+          .select("id, quantidade")
+          .eq("id", produto_id)
+          .single();
+        if (prodErr) throw prodErr;
+
+        const atual = Number(prod?.quantidade ?? 0);
+        const delta = tipo === "Entrada" ? -Number(quantidade) : Number(quantidade);
+        const novo = atual + delta;
+
+        if (novo < 0) {
+          return alert("A exclusão resultaria em estoque negativo. Operação cancelada.");
+        }
+
+        const { error: upErr } = await supabase
+          .from("produtos")
+          .update({ quantidade: novo })
+          .eq("id", produto_id);
+        if (upErr) throw upErr;
+      }
+
+      // Remove a movimentação
+      const { error: delErr } = await supabase
+        .from("movimentacoes")
+        .delete()
+        .eq("id", mov.id);
+      if (delErr) throw delErr;
+
+      setMovimentacoes((prev) => prev.filter((m) => m.id !== mov.id));
+      fetchProdutos(prodPage, search);
+
+      alert("Movimentação excluída com sucesso.");
+    } catch (e) {
+      console.error("Erro ao excluir movimentação:", e);
+      alert("Falha ao excluir movimentação: " + (e.message || e.toString()));
+    }
+  };
+
+  // 🔐 Tela de login
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-100">
+        <form onSubmit={handleLogin} className="bg-white p-6 rounded-xl shadow-lg w-80 space-y-4">
+          <h2 className="text-xl font-semibold text-center">Login</h2>
+          {erro && <p className="text-red-500 text-sm">{erro}</p>}
+          <input
+            type="email"
+            placeholder="Digite seu email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-400"
+          />
+          <input
+            type="password"
+            placeholder="Digite sua senha"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-400"
+          />
+          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg">
+            Entrar
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  // 🖥️ Sistema principal
+  const prodLastPage = Math.max(1, Math.ceil(prodTotal / PROD_PAGE_SIZE));
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-6">
+      {/* Cabeçalho */}
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center gap-3">
+          <img
+            src="/logo-fazenda.png"
+            alt="Logo da fazenda"
+            className="h-10 w-10 rounded-full object-cover ring-1 ring-black/5"
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
+          />
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-gray-600">{user.email}</span>
+          <button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg">
+            Sair
+          </button>
+        </div>
+      </div>
+
+      <Tabs
+        tabs={[
+          "Movimentações",
+          "Produtos",
+          "Defensivos",
+          "Inventário",
+          "Máquinas",
+          "Funcionários",
+          "Colheita", // ✅ NOVO
+        ]}
+        current={tab}
+        onChange={setTab}
+      />
+
+      <div className="mt-6">
+        {tab === "Movimentações" && (
+          <>
+            <MovForm produtos={produtos} funcionarios={funcionarios} maquinas={maquinas} onAdd={handleMovimentacao} />
+            <MovTable data={movimentacoes} onDelete={handleExcluirMovimentacao} />
+          </>
+        )}
+
+        {tab === "Produtos" && (
+          <>
+            <ProdutoForm
+              onAdd={async (p) => {
+                try {
+                  const produtoCorrigido = {
+                    codigo: p.codigo?.toString().trim() || null,
+                    nome: p.nome?.trim(),
+                    localizacao: p.localizacao?.trim() || null,
+                    quantidade: Number(p.quantidade ?? 0),
+                  };
+
+                  if (!produtoCorrigido.nome) {
+                    alert("Informe o nome do produto.");
+                    return;
+                  }
+
+                  const { error } = await supabase.from("produtos").insert([produtoCorrigido]);
+
+                  if (!error) {
+                    fetchProdutos(1, search);
+                  }
+                } catch (e) {
+                  alert("Falha ao salvar produto: " + e.message);
+                }
+              }}
+            />
+
+            <input
+              type="text"
+              placeholder="Pesquisar produto..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="border p-2 mt-4 w-full"
+            />
+
+            {prodLoading ? <div className="p-4">Carregando produtos…</div> : <ProdutosTable data={produtos} />}
+
+            {/* 🔵 Controles de paginação */}
+            <div className="flex flex-wrap items-center gap-2 mt-4">
+              <button onClick={() => fetchProdutos(1, search)} disabled={prodPage === 1} className="px-3 py-1 border rounded disabled:opacity-50">
+                Primeiro
+              </button>
+              <button onClick={() => fetchProdutos(prodPage - 1, search)} disabled={prodPage === 1} className="px-3 py-1 border rounded disabled:opacity-50">
+                Anterior
+              </button>
+              <span className="px-2">
+                Total: {prodTotal} • Página {prodPage} de {prodLastPage}
+              </span>
+              <button
+                onClick={() => fetchProdutos(prodPage + 1, search)}
+                disabled={prodPage >= prodLastPage}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+              >
+                Próxima
+              </button>
+              <button
+                onClick={() => fetchProdutos(prodLastPage, search)}
+                disabled={prodPage >= prodLastPage}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+              >
+                Última
+              </button>
+            </div>
+          </>
+        )}
+
+        {tab === "Defensivos" && <Defensivos />}
+
+        {tab === "Inventário" && <Inventario pageSize={50} />}
+
+        {tab === "Máquinas" && (
+          <>
+            <MaquinaForm
+              onAdd={async (m) => {
+                try {
+                  const maquinaCorrigida = {
+                    bem: m.bem ? Number(m.bem) : null,
+                    identificacao: m.identificacao?.trim(),
+                  };
+
+                  if (!maquinaCorrigida.identificacao) {
+                    alert("Informe a identificação da máquina.");
+                    return;
+                  }
+
+                  const { data, error } = await supabase.from("maquinas").insert([maquinaCorrigida]).select();
+
+                  if (!error) setMaquinas((prev) => [...prev, ...data]);
+                } catch (e) {
+                  alert("Falha ao salvar máquina: " + e.message);
+                }
+              }}
+            />
+            <MaquinasTable data={maquinas} />
+          </>
+        )}
+
+        {tab === "Funcionários" && (
+          <>
+            <FuncionarioForm
+              onAdd={async (f) => {
+                try {
+                  const funcionarioCorrigido = {
+                    nome: f.nome?.trim(),
+                    funcao: f.funcao?.trim() || null,
+                  };
+
+                  if (!funcionarioCorrigido.nome) {
+                    alert("Informe o nome do funcionário.");
+                    return;
+                  }
+
+                  const { data, error } = await supabase.from("funcionarios").insert([funcionarioCorrigido]).select();
+
+                  if (!error) setFuncionarios((prev) => [...prev, ...data]);
+                } catch (e) {
+                  alert("Falha ao salvar funcionário: " + e.message);
+                }
+              }}
+            />
+            <FuncionariosTable data={funcionarios} />
+          </>
+        )}
+
+        {tab === "Colheita" && <Colheita />}{/* ✅ NOVO */}
+      </div>
+    </div>
+  );
+}
