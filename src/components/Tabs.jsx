@@ -1,7 +1,7 @@
 export default function Tabs({ tabs, current, onChange }) {
   return (
     <div className="overflow-x-auto border-b border-slate-200">
-      <div className="flex gap-2 min-w-fit">
+      <div className="flex flex-wrap gap-2 min-w-fit">
         {tabs.map((t) => (
           <button
             key={t}
