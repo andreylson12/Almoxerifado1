@@ -332,7 +332,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      {/* Cabeçalho */}
+      {/* Fazenda Irmão coragem*/}
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-3">
           <img
