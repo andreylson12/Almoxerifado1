@@ -85,31 +85,48 @@ export default function App() {
     setProdLoading(false);
   };
 
+  // 🔁 Carregar máquinas, funcionários e movimentações (com tratamento de erros)
+  const fetchOthers = async () => {
+    try {
+      const [maq, func, mov] = await Promise.all([
+        supabase.from("maquinas").select("*").order("id", { ascending: true }),
+        supabase.from("funcionarios").select("*").order("id", { ascending: true }),
+        supabase
+          .from("movimentacoes")
+          .select(`
+            *,
+            produtos (nome, localizacao),
+            funcionarios (nome),
+            maquinas (identificacao)
+          `)
+          .order("created_at", { ascending: false }),
+      ]);
+
+      if (maq.error) {
+        console.error("Erro ao carregar máquinas:", maq.error);
+        alert("Erro ao carregar máquinas: " + maq.error.message);
+      }
+      if (func.error) {
+        console.error("Erro ao carregar funcionários:", func.error);
+        alert("Erro ao carregar funcionários: " + func.error.message);
+      }
+      if (mov.error) {
+        console.error("Erro ao carregar movimentações:", mov.error);
+        alert("Erro ao carregar movimentações: " + mov.error.message);
+      }
+
+      setMaquinas(maq.data || []);
+      setFuncionarios(func.data || []);
+      setMovimentacoes(mov.data || []);
+    } catch (e) {
+      console.error("Falha geral ao carregar dados:", e);
+      alert("Falha geral ao carregar dados. Veja o console para detalhes.");
+    }
+  };
+
   // 🔄 Carrega dados quando usuário está logado
   useEffect(() => {
     if (!user) return;
-
-    const fetchOthers = async () => {
-      const { data: maquinasData } = await supabase.from("maquinas").select("*");
-      const { data: funcionariosData } = await supabase.from("funcionarios").select("*");
-      const { data: movsData } = await supabase
-        .from("movimentacoes")
-        .select(
-          `
-          *,
-          produtos (nome, localizacao),
-          funcionarios (nome),
-          maquinas (identificacao)
-        `
-        )
-        .order("created_at", { ascending: false });
-
-      setMaquinas(maquinasData || []);
-      setFuncionarios(funcionariosData || []);
-      setMovimentacoes(movsData || []);
-    };
-
-    // Produtos paginados + demais tabelas
     fetchProdutos(1, search);
     fetchOthers();
   }, [user]);
@@ -329,6 +346,12 @@ export default function App() {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-gray-600">{user.email}</span>
+          <button
+            onClick={() => { fetchProdutos(1, search); fetchOthers(); }}
+            className="bg-slate-200 hover:bg-slate-300 text-slate-800 px-3 py-1 rounded-lg"
+          >
+            Recarregar dados
+          </button>
           <button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg">
             Sair
           </button>
@@ -352,7 +375,13 @@ export default function App() {
       <div className="mt-6">
         {tab === "Movimentações" && (
           <>
-            <MovForm produtos={produtos} funcionarios={funcionarios} maquinas={maquinas} onAdd={handleMovimentacao} />
+            <MovForm
+              key={`mf-${maquinas.length}-${funcionarios.length}`} // ✅ força remontagem quando listas chegam
+              produtos={produtos}
+              funcionarios={funcionarios}
+              maquinas={maquinas}
+              onAdd={handleMovimentacao}
+            />
             <MovTable data={movimentacoes} onDelete={handleExcluirMovimentacao} />
           </>
         )}
