@@ -28,9 +28,8 @@ export default function Colheita() {
     observacoes: "",
   });
 
-  // config de sacas (p/ média sc/ha)
-  const [kgPorSaca, setKgPorSaca] = useState(60); // soja=60, milho=60/50 conforme preferir
-
+  // kg por saca p/ média sc/ha
+  const [kgPorSaca, setKgPorSaca] = useState(60);
   const setF = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
   const fetchCargas = async () => {
@@ -60,7 +59,7 @@ export default function Colheita() {
 
   useEffect(() => {
     fetchCargas();
-  }, []); // carrega ao abrir
+  }, []);
 
   const addCarga = async () => {
     try {
@@ -92,7 +91,7 @@ export default function Colheita() {
         data: new Date().toISOString().slice(0, 10),
         cultura: form.cultura,
         talhao: form.talhao,
-        area_total_ha: form.area_total_ha, // mantém para próximas cargas
+        area_total_ha: form.area_total_ha,
         placa: "",
         motorista: "",
         destino: "",
@@ -118,14 +117,15 @@ export default function Colheita() {
     });
   }, [rows, from, to, fCultura, fTalhao]);
 
-  // cálculos
+  // liquido no front (bruto - tara)
+  const liq = (r) => Math.max(0, Number(r.peso_bruto_kg || 0) - Number(r.tara_kg || 0));
+
+  // totais
   const totBruto = filtered.reduce((s, r) => s + Number(r.peso_bruto_kg || 0), 0);
   const totTara  = filtered.reduce((s, r) => s + Number(r.tara_kg || 0), 0);
-  const totLiq   = filtered.reduce((s, r) => s + Number(r.peso_liquido_kg || 0), 0);
+  const totLiq   = filtered.reduce((s, r) => s + liq(r), 0);
 
-  // área de referência:
-  // usa a maior area_total_ha cadastrada nas cargas do filtro (caso tenha),
-  // senão usa o campo do formulário (se o usuário quiser digitar só uma vez).
+  // área de referência (maior informada no filtro, senão a do form)
   const areaRef =
     (Math.max(0, ...filtered.map((r) => Number(r.area_total_ha || 0))) || 0) ||
     Number(form.area_total_ha || 0) ||
@@ -197,7 +197,7 @@ export default function Colheita() {
         </div>
       </div>
 
-      {/* Formulário de lançamento */}
+      {/* Formulário */}
       <div className="bg-white p-4 rounded-lg shadow space-y-3">
         <h3 className="font-semibold">Lançar carga</h3>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -243,7 +243,7 @@ export default function Colheita() {
         </div>
       </div>
 
-      {/* Tabela de cargas */}
+      {/* Tabela */}
       <div className="overflow-x-auto rounded-lg shadow">
         <table className="w-full bg-white">
           <thead className="bg-slate-100">
@@ -263,7 +263,13 @@ export default function Colheita() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td className="p-4 text-center" colSpan={11}><span className="inline-flex items-center gap-2 text-slate-600"><Loader2 className="h-4 w-4 animate-spin" /> Carregando…</span></td></tr>
+              <tr>
+                <td className="p-4 text-center" colSpan={11}>
+                  <span className="inline-flex items-center gap-2 text-slate-600">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Carregando…
+                  </span>
+                </td>
+              </tr>
             ) : filtered.length === 0 ? (
               <tr><td className="p-4 text-center text-slate-500" colSpan={11}>Nenhuma carga.</td></tr>
             ) : (
@@ -277,7 +283,7 @@ export default function Colheita() {
                   <td className="p-2">{r.motorista || "—"}</td>
                   <td className="p-2 text-right">{Number(r.peso_bruto_kg || 0).toLocaleString()}</td>
                   <td className="p-2 text-right">{Number(r.tara_kg || 0).toLocaleString()}</td>
-                  <td className="p-2 text-right">{Number(r.peso_liquido_kg || 0).toLocaleString()}</td>
+                  <td className="p-2 text-right">{liq(r).toLocaleString()}</td>
                   <td className="p-2">{r.destino || "—"}</td>
                   <td className="p-2">{r.ticket || "—"}</td>
                 </tr>
