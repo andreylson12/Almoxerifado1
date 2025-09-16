@@ -1,313 +1,283 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Edit3, Trash2, Save, X } from "lucide-react";
 
 export default function Plantios() {
-  // Talhões
-  const [talhoes, setTalhoes] = useState([]);
-  const [tLoading, setTLoading] = useState(false);
-  const [tForm, setTForm] = useState({ nome: "", area_ha: "" });
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [q, setQ] = useState("");
 
-  // Safras
-  const [safras, setSafras] = useState([]);
-  const [sLoading, setSLoading] = useState(false);
-  const [sForm, setSForm] = useState({
+  // form novo
+  const [form, setForm] = useState({
     cultura: "",
-    talhao_id: "",
-    data_plantio: new Date().toISOString().slice(0,10),
-    area_ha: "",
     variedade: "",
-    meta_sc_ha: "",
-    status: "em_andamento",
+    safra: "",
+    talhao: "",
+    area_ha: "",
+    data_plantio: "",
+    espacamento: "",
+    populacao_ha: "",
+    observacoes: "",
   });
+  const setF = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
-  const loadTalhoes = async () => {
-    setTLoading(true);
+  // edição linha
+  const [editId, setEditId] = useState(null);
+  const [editRow, setEditRow] = useState(null);
+
+  const fetchRows = async () => {
+    setLoading(true);
     try {
       const { data, error } = await supabase
-        .from("talhoes")
+        .from("plantios")
         .select("*")
-        .order("id", { ascending: true });
+        .order("data_plantio", { ascending: false })
+        .order("id", { ascending: false });
       if (error) throw error;
-      setTalhoes(data || []);
-    } catch (e) {
-      console.error(e);
-      alert("Falha ao carregar talhões.");
+      setRows(data || []);
+    } catch (err) {
+      console.error(err);
+      alert("Falha ao carregar plantios.");
     } finally {
-      setTLoading(false);
-    }
-  };
-
-  const loadSafras = async () => {
-    setSLoading(true);
-    try {
-      // busca safras e junta o nome do talhão
-      const { data, error } = await supabase
-        .from("safras")
-        .select("*, talhao:talhoes ( id, nome )")
-        .order("id", { ascending: true });
-      if (error) throw error;
-      setSafras(data || []);
-    } catch (e) {
-      console.error(e);
-      alert("Falha ao carregar safras.");
-    } finally {
-      setSLoading(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadTalhoes();
-    loadSafras();
+    fetchRows();
   }, []);
 
-  // ------- Talhões: add / delete -------
-  const addTalhao = async () => {
+  const filtered = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    if (!term) return rows;
+    return rows.filter((r) =>
+      [
+        r.cultura,
+        r.variedade,
+        r.safra,
+        r.talhao,
+        String(r.area_ha),
+        r.observacoes,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(term)
+    );
+  }, [q, rows]);
+
+  const addRow = async () => {
     try {
+      if (!form.cultura) return alert("Informe a cultura.");
       const payload = {
-        nome: (tForm.nome || "").trim(),
-        area_ha: tForm.area_ha ? Number(tForm.area_ha) : null,
+        cultura: form.cultura,
+        variedade: form.variedade || null,
+        safra: form.safra || null,
+        talhao: form.talhao || null,
+        area_ha: form.area_ha ? Number(form.area_ha) : null,
+        data_plantio: form.data_plantio || null,
+        espacamento: form.espacamento || null,
+        populacao_ha: form.populacao_ha ? Number(form.populacao_ha) : null,
+        observacoes: form.observacoes || null,
       };
-      if (!payload.nome) return alert("Informe o nome do talhão.");
-      const { error } = await supabase.from("talhoes").insert([payload]);
+      const { error } = await supabase.from("plantios").insert([payload]);
       if (error) throw error;
-      setTForm({ nome: "", area_ha: "" });
-      loadTalhoes();
-    } catch (e) {
-      console.error(e);
-      alert("Falha ao salvar talhão.");
-    }
-  };
-
-  const delTalhao = async (row) => {
-    if (!row?.id) return;
-    if (!confirm(`Excluir talhão "${row.nome}"? (Safras vinculadas ficarão sem talhão)`)) return;
-    try {
-      const { error } = await supabase.from("talhoes").delete().eq("id", row.id);
-      if (error) throw error;
-      loadTalhoes();
-      loadSafras(); // pode impactar listagem
-    } catch (e) {
-      console.error(e);
-      alert("Falha ao excluir talhão.");
-    }
-  };
-
-  // ------- Safras: add / delete -------
-  const addSafra = async () => {
-    try {
-      const payload = {
-        cultura: (sForm.cultura || "").trim(),
-        talhao_id: sForm.talhao_id ? Number(sForm.talhao_id) : null,
-        data_plantio: sForm.data_plantio || null,
-        area_ha: sForm.area_ha ? Number(sForm.area_ha) : null,
-        variedade: sForm.variedade || null,
-        meta_sc_ha: sForm.meta_sc_ha ? Number(sForm.meta_sc_ha) : null,
-        status: sForm.status || "em_andamento",
-      };
-      if (!payload.cultura) return alert("Informe a cultura.");
-      // se não informar area_ha, tenta puxar do talhão selecionado
-      if (!payload.area_ha && payload.talhao_id) {
-        const talhao = talhoes.find(t => t.id === payload.talhao_id);
-        if (talhao?.area_ha) payload.area_ha = Number(talhao.area_ha);
-      }
-
-      const { error } = await supabase.from("safras").insert([payload]);
-      if (error) throw error;
-
-      setSForm({
-        cultura: sForm.cultura,
-        talhao_id: sForm.talhao_id,
-        data_plantio: new Date().toISOString().slice(0,10),
-        area_ha: sForm.area_ha,
+      setForm({
+        cultura: "",
         variedade: "",
-        meta_sc_ha: sForm.meta_sc_ha,
-        status: "em_andamento",
+        safra: "",
+        talhao: "",
+        area_ha: "",
+        data_plantio: "",
+        espacamento: "",
+        populacao_ha: "",
+        observacoes: "",
       });
-      loadSafras();
-    } catch (e) {
-      console.error(e);
-      alert("Falha ao salvar safra.");
+      fetchRows();
+    } catch (err) {
+      console.error(err);
+      alert("Falha ao salvar plantio.");
     }
   };
 
-  const delSafra = async (row) => {
-    if (!row?.id) return;
-    if (!confirm(`Excluir safra ${row.cultura} (#${row.id})? (cargas vinculadas perderão o vínculo)`)) return;
+  const startEdit = (r) => {
+    setEditId(r.id);
+    setEditRow({ ...r, area_ha: r.area_ha ?? "", populacao_ha: r.populacao_ha ?? "" });
+  };
+
+  const cancelEdit = () => {
+    setEditId(null);
+    setEditRow(null);
+  };
+
+  const saveEdit = async () => {
     try {
-      const { error } = await supabase.from("safras").delete().eq("id", row.id);
+      const payload = {
+        cultura: editRow.cultura || null,
+        variedade: editRow.variedade || null,
+        safra: editRow.safra || null,
+        talhao: editRow.talhao || null,
+        area_ha: editRow.area_ha === "" ? null : Number(editRow.area_ha),
+        data_plantio: editRow.data_plantio || null,
+        espacamento: editRow.espacamento || null,
+        populacao_ha: editRow.populacao_ha === "" ? null : Number(editRow.populacao_ha),
+        observacoes: editRow.observacoes || null,
+      };
+      const { error } = await supabase.from("plantios").update(payload).eq("id", editId);
       if (error) throw error;
-      loadSafras();
-    } catch (e) {
-      console.error(e);
-      alert("Falha ao excluir safra.");
+      cancelEdit();
+      fetchRows();
+    } catch (err) {
+      console.error(err);
+      alert("Falha ao salvar alterações.");
+    }
+  };
+
+  const delRow = async (r) => {
+    try {
+      const ok = window.confirm(
+        `Excluir plantio "${r.cultura}" (talhão ${r.talhao || "—"})?\n` +
+        `As cargas de colheita vinculadas (plantio_id=${r.id}) serão mantidas, mas sem vínculo.`
+      );
+      if (!ok) return;
+      const { error } = await supabase.from("plantios").delete().eq("id", r.id);
+      if (error) throw error;
+      fetchRows();
+    } catch (err) {
+      console.error(err);
+      alert("Falha ao excluir plantio.");
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* TALHÕES */}
+    <div className="space-y-4">
+      {/* Formulário */}
       <div className="bg-white p-4 rounded-lg shadow space-y-3">
-        <h3 className="font-semibold">Talhões</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <input
-            className="border rounded px-3 py-2"
-            placeholder="Nome do talhão"
-            value={tForm.nome}
-            onChange={(e)=>setTForm(s=>({...s, nome: e.target.value}))}
-          />
-          <input
-            className="border rounded px-3 py-2"
-            placeholder="Área (ha)"
-            type="number"
-            value={tForm.area_ha}
-            onChange={(e)=>setTForm(s=>({...s, area_ha: e.target.value}))}
-          />
-          <button onClick={addTalhao} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
-            Salvar talhão
-          </button>
+        <h3 className="font-semibold">Novo plantio</h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <input className="border rounded px-3 py-2" placeholder="Cultura (ex: Soja)"
+                 value={form.cultura} onChange={(e)=>setF("cultura", e.target.value)} />
+          <input className="border rounded px-3 py-2" placeholder="Variedade"
+                 value={form.variedade} onChange={(e)=>setF("variedade", e.target.value)} />
+          <input className="border rounded px-3 py-2" placeholder="Safra (ex: 24/25)"
+                 value={form.safra} onChange={(e)=>setF("safra", e.target.value)} />
+          <input className="border rounded px-3 py-2" placeholder="Talhão"
+                 value={form.talhao} onChange={(e)=>setF("talhao", e.target.value)} />
         </div>
-
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full bg-white">
-            <thead className="bg-slate-100">
-              <tr>
-                <th className="p-2 text-left">ID</th>
-                <th className="p-2 text-left">Nome</th>
-                <th className="p-2 text-left">Área (ha)</th>
-                <th className="p-2 text-left">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tLoading ? (
-                <tr><td className="p-4 text-center" colSpan={4}><span className="inline-flex items-center gap-2 text-slate-600"><Loader2 className="h-4 w-4 animate-spin" /> Carregando…</span></td></tr>
-              ) : talhoes.length === 0 ? (
-                <tr><td className="p-4 text-center text-slate-500" colSpan={4}>Nenhum talhão cadastrado.</td></tr>
-              ) : (
-                talhoes.map(t => (
-                  <tr key={t.id} className="border-t">
-                    <td className="p-2">{t.id}</td>
-                    <td className="p-2">{t.nome}</td>
-                    <td className="p-2">{t.area_ha ?? "—"}</td>
-                    <td className="p-2">
-                      <button onClick={()=>delTalhao(t)} className="inline-flex items-center gap-1 text-red-600 hover:text-red-700">
-                        <Trash2 className="h-4 w-4" /> Excluir
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <input className="border rounded px-3 py-2" placeholder="Área (ha)" type="number"
+                 value={form.area_ha} onChange={(e)=>setF("area_ha", e.target.value)} />
+          <input className="border rounded px-3 py-2" type="date"
+                 value={form.data_plantio} onChange={(e)=>setF("data_plantio", e.target.value)} />
+          <input className="border rounded px-3 py-2" placeholder="Espaçamento"
+                 value={form.espacamento} onChange={(e)=>setF("espacamento", e.target.value)} />
+          <input className="border rounded px-3 py-2" placeholder="População/ha" type="number"
+                 value={form.populacao_ha} onChange={(e)=>setF("populacao_ha", e.target.value)} />
+        </div>
+        <textarea className="border rounded px-3 py-2 w-full" rows={2} placeholder="Observações"
+                  value={form.observacoes} onChange={(e)=>setF("observacoes", e.target.value)} />
+        <div className="flex justify-end">
+          <button onClick={addRow} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
+            Salvar plantio
+          </button>
         </div>
       </div>
 
-      {/* SAFRAS / PLANTIOS */}
-      <div className="bg-white p-4 rounded-lg shadow space-y-3">
-        <h3 className="font-semibold">Safras / Plantios</h3>
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <input
-            className="border rounded px-3 py-2"
-            placeholder="Cultura (ex: Soja)"
-            value={sForm.cultura}
-            onChange={(e)=>setSForm(s=>({...s, cultura: e.target.value}))}
-          />
-          <select
-            className="border rounded px-3 py-2"
-            value={sForm.talhao_id}
-            onChange={(e)=>setSForm(s=>({...s, talhao_id: e.target.value}))}
-          >
-            <option value="">(Sem talhão)</option>
-            {talhoes.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
-          </select>
-          <input
-            type="date"
-            className="border rounded px-3 py-2"
-            value={sForm.data_plantio}
-            onChange={(e)=>setSForm(s=>({...s, data_plantio: e.target.value}))}
-          />
-          <input
-            className="border rounded px-3 py-2"
-            placeholder="Área (ha)"
-            type="number"
-            value={sForm.area_ha}
-            onChange={(e)=>setSForm(s=>({...s, area_ha: e.target.value}))}
-            title="Se vazio, usaremos a área do talhão (se existir)."
-          />
-          <input
-            className="border rounded px-3 py-2"
-            placeholder="Variedade"
-            value={sForm.variedade}
-            onChange={(e)=>setSForm(s=>({...s, variedade: e.target.value}))}
-          />
-          <input
-            className="border rounded px-3 py-2"
-            placeholder="Meta (sc/ha)"
-            type="number"
-            value={sForm.meta_sc_ha}
-            onChange={(e)=>setSForm(s=>({...s, meta_sc_ha: e.target.value}))}
-          />
-        </div>
+      {/* Filtro */}
+      <div className="flex items-center gap-2">
+        <input className="border rounded px-3 py-2 w-full md:w-96" placeholder="Buscar por cultura, talhão, safra…"
+               value={q} onChange={(e)=>setQ(e.target.value)} />
+        <button onClick={fetchRows} className="px-3 py-2 rounded border">Atualizar</button>
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <select
-            className="border rounded px-3 py-2"
-            value={sForm.status}
-            onChange={(e)=>setSForm(s=>({...s, status: e.target.value}))}
-          >
-            <option value="em_andamento">Em andamento</option>
-            <option value="concluida">Concluída</option>
-            <option value="cancelada">Cancelada</option>
-          </select>
-          <div className="md:col-span-5 flex justify-end">
-            <button onClick={addSafra} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
-              Salvar safra
-            </button>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full bg-white">
-            <thead className="bg-slate-100">
-              <tr>
-                <th className="p-2 text-left">ID</th>
-                <th className="p-2 text-left">Cultura</th>
-                <th className="p-2 text-left">Talhão</th>
-                <th className="p-2 text-left">Área (ha)</th>
-                <th className="p-2 text-left">Plantio</th>
-                <th className="p-2 text-left">Variedade</th>
-                <th className="p-2 text-left">Meta (sc/ha)</th>
-                <th className="p-2 text-left">Status</th>
-                <th className="p-2 text-left">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sLoading ? (
-                <tr><td className="p-4 text-center" colSpan={9}><span className="inline-flex items-center gap-2 text-slate-600"><Loader2 className="h-4 w-4 animate-spin" /> Carregando…</span></td></tr>
-              ) : safras.length === 0 ? (
-                <tr><td className="p-4 text-center text-slate-500" colSpan={9}>Nenhuma safra cadastrada.</td></tr>
-              ) : (
-                safras.map(s => (
-                  <tr key={s.id} className="border-t">
-                    <td className="p-2">{s.id}</td>
-                    <td className="p-2">{s.cultura}</td>
-                    <td className="p-2">{s.talhao?.nome || "—"}</td>
-                    <td className="p-2">{s.area_ha ?? "—"}</td>
-                    <td className="p-2">{s.data_plantio || "—"}</td>
-                    <td className="p-2">{s.variedade || "—"}</td>
-                    <td className="p-2">{s.meta_sc_ha ?? "—"}</td>
-                    <td className="p-2">{s.status || "—"}</td>
-                    <td className="p-2">
-                      <button onClick={()=>delSafra(s)} className="inline-flex items-center gap-1 text-red-600 hover:text-red-700">
-                        <Trash2 className="h-4 w-4" /> Excluir
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+      {/* Tabela */}
+      <div className="overflow-x-auto rounded-lg shadow">
+        <table className="w-full bg-white">
+          <thead className="bg-slate-100">
+            <tr>
+              <th className="p-2 text-left">Cultura</th>
+              <th className="p-2 text-left">Variedade</th>
+              <th className="p-2 text-left">Safra</th>
+              <th className="p-2 text-left">Talhão</th>
+              <th className="p-2 text-right">Área (ha)</th>
+              <th className="p-2 text-left">Data plantio</th>
+              <th className="p-2 text-left">Espaçamento</th>
+              <th className="p-2 text-right">População/ha</th>
+              <th className="p-2 text-left">Obs.</th>
+              <th className="p-2 text-left">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td className="p-4 text-center" colSpan={10}>
+                <span className="inline-flex items-center gap-2 text-slate-600">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Carregando…
+                </span>
+              </td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td className="p-4 text-center text-slate-500" colSpan={10}>Nenhum plantio.</td></tr>
+            ) : (
+              filtered.map((r) => (
+                <tr key={r.id} className="border-t">
+                  {editId === r.id ? (
+                    <>
+                      <td className="p-2"><input className="border rounded px-2 py-1 w-full"
+                        value={editRow.cultura||""} onChange={(e)=>setEditRow({...editRow, cultura:e.target.value})} /></td>
+                      <td className="p-2"><input className="border rounded px-2 py-1 w-full"
+                        value={editRow.variedade||""} onChange={(e)=>setEditRow({...editRow, variedade:e.target.value})} /></td>
+                      <td className="p-2"><input className="border rounded px-2 py-1 w-full"
+                        value={editRow.safra||""} onChange={(e)=>setEditRow({...editRow, safra:e.target.value})} /></td>
+                      <td className="p-2"><input className="border rounded px-2 py-1 w-full"
+                        value={editRow.talhao||""} onChange={(e)=>setEditRow({...editRow, talhao:e.target.value})} /></td>
+                      <td className="p-2 text-right"><input className="border rounded px-2 py-1 w-full text-right" type="number"
+                        value={editRow.area_ha} onChange={(e)=>setEditRow({...editRow, area_ha:e.target.value})} /></td>
+                      <td className="p-2"><input className="border rounded px-2 py-1 w-full" type="date"
+                        value={editRow.data_plantio||""} onChange={(e)=>setEditRow({...editRow, data_plantio:e.target.value})} /></td>
+                      <td className="p-2"><input className="border rounded px-2 py-1 w-full"
+                        value={editRow.espacamento||""} onChange={(e)=>setEditRow({...editRow, espacamento:e.target.value})} /></td>
+                      <td className="p-2 text-right"><input className="border rounded px-2 py-1 w-full text-right" type="number"
+                        value={editRow.populacao_ha} onChange={(e)=>setEditRow({...editRow, populacao_ha:e.target.value})} /></td>
+                      <td className="p-2"><input className="border rounded px-2 py-1 w-full"
+                        value={editRow.observacoes||""} onChange={(e)=>setEditRow({...editRow, observacoes:e.target.value})} /></td>
+                      <td className="p-2">
+                        <div className="flex items-center gap-2">
+                          <button onClick={saveEdit} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-600 text-white">
+                            <Save className="w-4 h-4" /> Salvar
+                          </button>
+                          <button onClick={cancelEdit} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-200">
+                            <X className="w-4 h-4" /> Cancelar
+                          </button>
+                        </div>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="p-2">{r.cultura}</td>
+                      <td className="p-2">{r.variedade || "—"}</td>
+                      <td className="p-2">{r.safra || "—"}</td>
+                      <td className="p-2">{r.talhao || "—"}</td>
+                      <td className="p-2 text-right">{r.area_ha ?? "—"}</td>
+                      <td className="p-2">{r.data_plantio || "—"}</td>
+                      <td className="p-2">{r.espacamento || "—"}</td>
+                      <td className="p-2 text-right">{r.populacao_ha ?? "—"}</td>
+                      <td className="p-2">{r.observacoes || "—"}</td>
+                      <td className="p-2">
+                        <div className="flex items-center gap-2">
+                          <button onClick={()=>startEdit(r)} className="inline-flex items-center gap-1 px-2 py-1 rounded border">
+                            <Edit3 className="w-4 h-4" /> Editar
+                          </button>
+                          <button onClick={()=>delRow(r)} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-600 text-white">
+                            <Trash2 className="w-4 h-4" /> Excluir
+                          </button>
+                        </div>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
