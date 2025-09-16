@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 export default function Colheita() {
   // filtros
@@ -8,14 +8,10 @@ export default function Colheita() {
   const [to, setTo] = useState("");
   const [fCultura, setFCultura] = useState("");
   const [fTalhao, setFTalhao] = useState("");
-  const [fPlantioId, setFPlantioId] = useState(""); // novo filtro por plantio
 
   // dados
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-
-  // plantios (para vincular e filtrar)
-  const [plantios, setPlantios] = useState([]);
 
   // form novo registro
   const [form, setForm] = useState({
@@ -30,27 +26,24 @@ export default function Colheita() {
     peso_bruto_kg: "",
     tara_kg: "",
     observacoes: "",
-    plantio_id: "", // NOVO
   });
 
   // config de sacas (p/ média sc/ha)
-  const [kgPorSaca, setKgPorSaca] = useState(60);
+  const [kgPorSaca, setKgPorSaca] = useState(60); // soja=60, milho=60/50 conforme preferir
   const setF = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
-  const fetchPlantios = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("plantios")
-        .select("id, cultura, talhao, safra, area_ha")
-        .order("data_plantio", { ascending: false });
-      if (error) throw error;
-      setPlantios(data || []);
-    } catch (err) {
-      console.error(err);
-      alert("Falha ao carregar plantios (para seleção).");
-    }
+  // -------- helpers
+  const netKg = (r) => {
+    const bruto = Number(r.peso_bruto_kg || 0);
+    const tara = Number(r.tara_kg || 0);
+    const liq =
+      r.peso_liquido_kg != null
+        ? Number(r.peso_liquido_kg)
+        : bruto - tara;
+    return Math.max(0, liq);
   };
 
+  // -------- carregar dados
   const fetchCargas = async () => {
     setLoading(true);
     try {
@@ -64,7 +57,6 @@ export default function Colheita() {
       if (to) q = q.lte("data", to);
       if (fCultura) q = q.ilike("cultura", `%${fCultura}%`);
       if (fTalhao) q = q.ilike("talhao", `%${fTalhao}%`);
-      if (fPlantioId) q = q.eq("plantio_id", Number(fPlantioId));
 
       const { data, error } = await q;
       if (error) throw error;
@@ -77,11 +69,9 @@ export default function Colheita() {
     }
   };
 
-  useEffect(() => {
-    fetchPlantios();
-    fetchCargas();
-  }, []); // ao abrir
+  useEffect(() => { fetchCargas(); }, []); // carrega ao abrir
 
+  // -------- inserir
   const addCarga = async () => {
     try {
       const payload = {
@@ -96,7 +86,6 @@ export default function Colheita() {
         peso_bruto_kg: Number(form.peso_bruto_kg || 0),
         tara_kg: Number(form.tara_kg || 0),
         observacoes: form.observacoes || null,
-        plantio_id: form.plantio_id ? Number(form.plantio_id) : null,
       };
 
       if (!payload.peso_bruto_kg || !payload.tara_kg) {
@@ -109,12 +98,11 @@ export default function Colheita() {
       const { error } = await supabase.from("colheita_cargas").insert([payload]);
       if (error) throw error;
 
-      // mantém cultura/talhão/área e plantio para facilitar lançamentos em sequência
       setForm({
         data: new Date().toISOString().slice(0, 10),
         cultura: form.cultura,
         talhao: form.talhao,
-        area_total_ha: form.area_total_ha,
+        area_total_ha: form.area_total_ha, // mantém para próximas cargas
         placa: "",
         motorista: "",
         destino: "",
@@ -122,7 +110,6 @@ export default function Colheita() {
         peso_bruto_kg: "",
         tara_kg: "",
         observacoes: "",
-        plantio_id: form.plantio_id,
       });
       fetchCargas();
     } catch (err) {
@@ -131,82 +118,88 @@ export default function Colheita() {
     }
   };
 
-  const delCarga = async (r) => {
-    try {
-      const ok = window.confirm(
-        `Excluir a carga do dia ${r.data || "—"} (ticket ${r.ticket || "—"})?`
-      );
-      if (!ok) return;
-      const { error } = await supabase
-        .from("colheita_cargas")
-        .delete()
-        .eq("id", r.id);
-      if (error) throw error;
-      fetchCargas();
-    } catch (err) {
-      console.error(err);
-      alert("Falha ao excluir carga.");
-    }
-  };
-
+  // -------- filtrar em memória
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       if (from && r.data < from) return false;
       if (to && r.data > to) return false;
       if (fCultura && !(r.cultura || "").toLowerCase().includes(fCultura.toLowerCase())) return false;
       if (fTalhao && !(r.talhao || "").toLowerCase().includes(fTalhao.toLowerCase())) return false;
-      if (fPlantioId && Number(r.plantio_id) !== Number(fPlantioId)) return false;
       return true;
     });
-  }, [rows, from, to, fCultura, fTalhao, fPlantioId]);
+  }, [rows, from, to, fCultura, fTalhao]);
 
-  // cálculos
+  // -------- totais globais
   const totBruto = filtered.reduce((s, r) => s + Number(r.peso_bruto_kg || 0), 0);
   const totTara  = filtered.reduce((s, r) => s + Number(r.tara_kg || 0), 0);
-  const totLiq   = filtered.reduce(
-    (s, r) => s + Number((r.peso_liquido_kg ?? (Number(r.peso_bruto_kg||0) - Number(r.tara_kg||0))) || 0),
-    0
-  );
+  const totLiq   = filtered.reduce((s, r) => s + netKg(r), 0);
 
-  // área de referência (se filtrar por plantio, usa área do plantio; senão usa maior área das cargas ou o form)
-  const plantioSel = plantios.find(p => p.id === Number(fPlantioId));
+  // área de referência global (usa maior área cadastrada nos registros filtrados; senão, a do formulário)
   const areaRef =
-    (plantioSel?.area_ha
-      ?? Math.max(0, ...filtered.map((r) => Number(r.area_total_ha || 0)))
-      ?? 0)
-    || Number(form.area_total_ha || 0)
-    || 0;
+    (Math.max(0, ...filtered.map((r) => Number(r.area_total_ha || 0))) || 0) ||
+    Number(form.area_total_ha || 0) ||
+    0;
 
   const mediaKgHa = areaRef > 0 ? totLiq / areaRef : 0;
   const mediaScHa = kgPorSaca > 0 ? mediaKgHa / kgPorSaca : 0;
 
+  // -------- RESUMO POR PLANTIO (Cultura/Talhão/Ano)
+  const resumo = useMemo(() => {
+    const map = new Map();
+    for (const r of filtered) {
+      const cultura = (r.cultura || "—").trim();
+      const talhao  = (r.talhao  || "—").trim();
+      const safra   = (r.data || "").slice(0, 4) || "—"; // ano da data
+      const key = `${cultura}__${talhao}__${safra}`;
+
+      const g = map.get(key) || {
+        cultura, talhao, safra,
+        cargas: 0,
+        bruto: 0,
+        tara: 0,
+        liquido: 0,
+        areaRef: 0,
+      };
+
+      g.cargas += 1;
+      g.bruto  += Number(r.peso_bruto_kg || 0);
+      g.tara   += Number(r.tara_kg || 0);
+      g.liquido += netKg(r);
+      g.areaRef = Math.max(g.areaRef, Number(r.area_total_ha || 0));
+
+      map.set(key, g);
+    }
+
+    const arr = Array.from(map.values());
+    arr.sort((a, b) =>
+      a.cultura.localeCompare(b.cultura) ||
+      a.talhao.localeCompare(b.talhao) ||
+      a.safra.localeCompare(b.safra)
+    );
+    return arr;
+  }, [filtered]);
+
   return (
     <div className="space-y-4">
-      {/* Filtros e resumo */}
+      {/* Filtros e resumo global */}
       <div className="bg-white p-4 rounded-lg shadow space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
           <input type="date" className="border rounded px-3 py-2" value={from} onChange={(e)=>setFrom(e.target.value)} />
           <input type="date" className="border rounded px-3 py-2" value={to} onChange={(e)=>setTo(e.target.value)} />
           <input className="border rounded px-3 py-2" placeholder="Cultura (ex: Soja)" value={fCultura} onChange={(e)=>setFCultura(e.target.value)} />
           <input className="border rounded px-3 py-2" placeholder="Talhão" value={fTalhao} onChange={(e)=>setFTalhao(e.target.value)} />
-
-          <select className="border rounded px-3 py-2" value={fPlantioId} onChange={(e)=>setFPlantioId(e.target.value)}>
-            <option value="">Plantio (todos)</option>
-            {plantios.map(p => (
-              <option key={p.id} value={p.id}>
-                {p.cultura} • {p.talhao || "—"} {p.safra ? `• ${p.safra}` : ""} {p.area_ha ? `• ${p.area_ha} ha` : ""}
-              </option>
-            ))}
-          </select>
-
           <button onClick={fetchCargas} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">
             Atualizar
           </button>
 
           <div className="flex items-center gap-2">
             <label className="text-sm text-slate-600">kg/saca</label>
-            <input type="number" className="border rounded px-2 py-1 w-24"
-              value={kgPorSaca} onChange={(e)=>setKgPorSaca(Number(e.target.value || 0))} />
+            <input
+              type="number"
+              className="border rounded px-2 py-1 w-24"
+              value={kgPorSaca}
+              onChange={(e)=>setKgPorSaca(Number(e.target.value || 0))}
+            />
           </div>
         </div>
 
@@ -249,74 +242,90 @@ export default function Colheita() {
         </div>
       </div>
 
+      {/* ➕ NOVO: Resumo por Plantio (Cultura/Talhão/Ano) */}
+      <div className="overflow-x-auto rounded-lg shadow">
+        <table className="w-full bg-white">
+          <thead className="bg-slate-100">
+            <tr>
+              <th className="p-2 text-left">Cultura</th>
+              <th className="p-2 text-left">Talhão</th>
+              <th className="p-2 text-left">Safra (Ano)</th>
+              <th className="p-2 text-right">Cargas</th>
+              <th className="p-2 text-right">Área ref. (ha)</th>
+              <th className="p-2 text-right">Líquido (kg)</th>
+              <th className="p-2 text-right">Média (kg/ha)</th>
+              <th className="p-2 text-right">Média (sc/ha)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {resumo.length === 0 ? (
+              <tr>
+                <td className="p-4 text-center text-slate-500" colSpan={8}>Sem dados para o filtro atual.</td>
+              </tr>
+            ) : (
+              resumo.map((g, i) => {
+                const medKgHa = g.areaRef > 0 ? g.liquido / g.areaRef : 0;
+                const medScHa = kgPorSaca > 0 ? medKgHa / kgPorSaca : 0;
+                return (
+                  <tr key={i} className="border-t">
+                    <td className="p-2">{g.cultura}</td>
+                    <td className="p-2">{g.talhao}</td>
+                    <td className="p-2">{g.safra}</td>
+                    <td className="p-2 text-right">{g.cargas}</td>
+                    <td className="p-2 text-right">{g.areaRef ? g.areaRef.toLocaleString() : "—"}</td>
+                    <td className="p-2 text-right">{g.liquido.toLocaleString()}</td>
+                    <td className="p-2 text-right">
+                      {medKgHa ? medKgHa.toLocaleString(undefined, { maximumFractionDigits: 1 }) : "—"}
+                    </td>
+                    <td className="p-2 text-right">
+                      {medScHa ? medScHa.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
       {/* Formulário de lançamento */}
       <div className="bg-white p-4 rounded-lg shadow space-y-3">
         <h3 className="font-semibold">Lançar carga</h3>
-
-        {/* Seleção de plantio (preenche cultura/talhão/área automaticamente se desejar) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <select className="border rounded px-3 py-2"
-            value={form.plantio_id}
-            onChange={(e) => {
-              const v = e.target.value;
-              setF("plantio_id", v);
-              const p = plantios.find((x)=>x.id === Number(v));
-              if (p) {
-                if (!form.cultura) setF("cultura", p.cultura || "");
-                if (!form.talhao) setF("talhao", p.talhao || "");
-                if (!form.area_total_ha && p.area_ha) setF("area_total_ha", String(p.area_ha));
-              }
-            }}>
-            <option value="">Vincular a um plantio (opcional)</option>
-            {plantios.map(p => (
-              <option key={p.id} value={p.id}>
-                {p.cultura} • {p.talhao || "—"} {p.safra ? `• ${p.safra}` : ""} {p.area_ha ? `• ${p.area_ha} ha` : ""}
-              </option>
-            ))}
-          </select>
-
-          <input type="date" className="border rounded px-3 py-2"
-                 value={form.data} onChange={(e)=>setF("data", e.target.value)} />
-
-          <input className="border rounded px-3 py-2" placeholder="Área total (ha)" type="number"
-                 value={form.area_total_ha} onChange={(e)=>setF("area_total_ha", e.target.value)} />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <input className="border rounded px-3 py-2" placeholder="Cultura"
-                 value={form.cultura} onChange={(e)=>setF("cultura", e.target.value)} />
-          <input className="border rounded px-3 py-2" placeholder="Talhão"
-                 value={form.talhao} onChange={(e)=>setF("talhao", e.target.value)} />
-          <input className="border rounded px-3 py-2" placeholder="Placa"
-                 value={form.placa} onChange={(e)=>setF("placa", e.target.value.toUpperCase())} />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <input type="date" className="border rounded px-3 py-2" value={form.data} onChange={(e)=>setF("data", e.target.value)} />
+          <input className="border rounded px-3 py-2" placeholder="Cultura (ex: Soja)" value={form.cultura} onChange={(e)=>setF("cultura", e.target.value)} />
+          <input className="border rounded px-3 py-2" placeholder="Talhão" value={form.talhao} onChange={(e)=>setF("talhao", e.target.value)} />
+          <input className="border rounded px-3 py-2" placeholder="Área total (ha)" type="number" value={form.area_total_ha} onChange={(e)=>setF("area_total_ha", e.target.value)} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <input className="border rounded px-3 py-2" placeholder="Motorista"
-                 value={form.motorista} onChange={(e)=>setF("motorista", e.target.value)} />
-          <input className="border rounded px-3 py-2" placeholder="Destino"
-                 value={form.destino} onChange={(e)=>setF("destino", e.target.value)} />
-          <input className="border rounded px-3 py-2" placeholder="Ticket"
-                 value={form.ticket} onChange={(e)=>setF("ticket", e.target.value)} />
-          <input className="border rounded px-3 py-2" placeholder="Peso bruto (kg)" type="number"
-                 value={form.peso_bruto_kg} onChange={(e)=>setF("peso_bruto_kg", e.target.value)} />
+          <input className="border rounded px-3 py-2" placeholder="Placa" value={form.placa} onChange={(e)=>setF("placa", e.target.value.toUpperCase())} />
+          <input className="border rounded px-3 py-2" placeholder="Motorista" value={form.motorista} onChange={(e)=>setF("motorista", e.target.value)} />
+          <input className="border rounded px-3 py-2" placeholder="Destino" value={form.destino} onChange={(e)=>setF("destino", e.target.value)} />
+          <input className="border rounded px-3 py-2" placeholder="Ticket" value={form.ticket} onChange={(e)=>setF("ticket", e.target.value)} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <input className="border rounded px-3 py-2" placeholder="Tara (kg)" type="number"
-                 value={form.tara_kg} onChange={(e)=>setF("tara_kg", e.target.value)} />
+          <input className="border rounded px-3 py-2" placeholder="Peso bruto (kg)" type="number" value={form.peso_bruto_kg} onChange={(e)=>setF("peso_bruto_kg", e.target.value)} />
+          <input className="border rounded px-3 py-2" placeholder="Tara (kg)" type="number" value={form.tara_kg} onChange={(e)=>setF("tara_kg", e.target.value)} />
           <input className="border rounded px-3 py-2 bg-slate-50" readOnly
             value={
               form.peso_bruto_kg && form.tara_kg
                 ? Math.max(0, Number(form.peso_bruto_kg) - Number(form.tara_kg))
                 : ""
             }
-            placeholder="Líquido (kg)" title="Calculado automaticamente (bruto - tara)" />
+            placeholder="Líquido (kg)"
+            title="Calculado automaticamente (bruto - tara)"
+          />
         </div>
 
-        <textarea className="border rounded px-3 py-2 w-full" rows={2}
+        <textarea
+          className="border rounded px-3 py-2 w-full"
+          rows={2}
           placeholder="Observações"
-          value={form.observacoes} onChange={(e)=>setF("observacoes", e.target.value)} />
+          value={form.observacoes}
+          onChange={(e)=>setF("observacoes", e.target.value)}
+        />
 
         <div className="flex justify-end">
           <button onClick={addCarga} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
@@ -331,7 +340,6 @@ export default function Colheita() {
           <thead className="bg-slate-100">
             <tr>
               <th className="p-2 text-left">Data</th>
-              <th className="p-2 text-left">Plantio</th>
               <th className="p-2 text-left">Cultura</th>
               <th className="p-2 text-left">Talhão</th>
               <th className="p-2 text-left">Área total (ha)</th>
@@ -342,32 +350,25 @@ export default function Colheita() {
               <th className="p-2 text-right">Líquido (kg)</th>
               <th className="p-2 text-left">Destino</th>
               <th className="p-2 text-left">Ticket</th>
-              <th className="p-2 text-left">Ações</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td className="p-4 text-center" colSpan={13}>
+                <td className="p-4 text-center" colSpan={11}>
                   <span className="inline-flex items-center gap-2 text-slate-600">
                     <Loader2 className="h-4 w-4 animate-spin" /> Carregando…
                   </span>
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
-              <tr><td className="p-4 text-center text-slate-500" colSpan={13}>Nenhuma carga.</td></tr>
+              <tr>
+                <td className="p-4 text-center text-slate-500" colSpan={11}>Nenhuma carga.</td>
+              </tr>
             ) : (
               filtered.map((r) => (
                 <tr key={r.id} className="border-t">
                   <td className="p-2">{r.data}</td>
-                  <td className="p-2">
-                    {r.plantio_id
-                      ? (() => {
-                          const p = plantios.find(x => x.id === r.plantio_id);
-                          return p ? `${p.cultura} • ${p.talhao || "—"} ${p.safra ? "• "+p.safra : ""}` : r.plantio_id;
-                        })()
-                      : "—"}
-                  </td>
                   <td className="p-2">{r.cultura || "—"}</td>
                   <td className="p-2">{r.talhao || "—"}</td>
                   <td className="p-2">{r.area_total_ha ?? "—"}</td>
@@ -375,19 +376,9 @@ export default function Colheita() {
                   <td className="p-2">{r.motorista || "—"}</td>
                   <td className="p-2 text-right">{Number(r.peso_bruto_kg || 0).toLocaleString()}</td>
                   <td className="p-2 text-right">{Number(r.tara_kg || 0).toLocaleString()}</td>
-                  <td className="p-2 text-right">
-                    {Number((r.peso_liquido_kg ?? (Number(r.peso_bruto_kg||0) - Number(r.tara_kg||0))) || 0).toLocaleString()}
-                  </td>
+                  <td className="p-2 text-right">{netKg(r).toLocaleString()}</td>
                   <td className="p-2">{r.destino || "—"}</td>
                   <td className="p-2">{r.ticket || "—"}</td>
-                  <td className="p-2">
-                    <button
-                      onClick={()=>delCarga(r)}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-600 text-white"
-                    >
-                      <Trash2 className="w-4 h-4" /> Excluir
-                    </button>
-                  </td>
                 </tr>
               ))
             )}
