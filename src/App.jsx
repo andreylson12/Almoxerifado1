@@ -309,7 +309,8 @@ export default function App() {
   const prodLastPage = Math.max(1, Math.ceil(prodTotal / PROD_PAGE_SIZE));
 
   return (
-    <div className="min-h-screen bg-emerald-50 flex">
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-lime-50 to-white flex">
+
       {/* Sidebar fixa no desktop */}
       <div className="hidden lg:block">
         <Sidebar
