@@ -13,7 +13,9 @@ import FuncionariosTable from "./components/FuncionariosTable";
 import Inventario from "./components/Inventario";
 import Defensivos from "./components/Defensivos";
 import Colheita from "./components/Colheita"; 
-import Plantios from "./components/Plantios";// ✅ NOVO
+import Plantios from "./components/Plantios";
+import Sidebar from "./components/Sidebar";
+import Dashboard from "./components/Dashboard";// ✅ NOVO
 
 // 🔵 PAGINAÇÃO PRODUTOS
 const PROD_PAGE_SIZE = 50;
