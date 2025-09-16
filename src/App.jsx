@@ -1,9 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+// src/App.jsx
+import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 
-import Sidebar from "./components/Sidebar";
-import Dashboard from "./components/Dashboard";
-
+import Tabs from "./components/Tabs";
 import MovForm from "./components/MovForm";
 import MovTable from "./components/MovTable";
 import ProdutoForm from "./components/ProdutoForm";
@@ -16,46 +15,44 @@ import Inventario from "./components/Inventario";
 import Defensivos from "./components/Defensivos";
 import Colheita from "./components/Colheita";
 import Plantios from "./components/Plantios";
+import Dashboard from "./components/Dashboard";
 
-import {
-  LayoutDashboard, Package, Shield, Warehouse, Tractor, Users, Wheat, Sprout,
-} from "lucide-react";
-
-// 🔵 paginação produtos
+// 🔵 Paginação produtos
 const PROD_PAGE_SIZE = 50;
 
 export default function App() {
+  // Auth / UI
   const [user, setUser] = useState(null);
-  const [tab, setTab] = useState("Painel"); // comece no painel (dashboard)
+  const [tab, setTab] = useState("Movimentações");
 
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
 
+  // Dados
   const [produtos, setProdutos] = useState([]);
   const [maquinas, setMaquinas] = useState([]);
   const [funcionarios, setFuncionarios] = useState([]);
   const [movimentacoes, setMovimentacoes] = useState([]);
 
+  // Busca/paginação produtos
   const [search, setSearch] = useState("");
-
-  // estados de paginação produtos
   const [prodPage, setProdPage] = useState(1);
   const [prodTotal, setProdTotal] = useState(0);
   const [prodLoading, setProdLoading] = useState(false);
 
-  // autenticação
+  // 🔐 Sessão / listener
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user ?? null);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
       setUser(session?.user ?? null);
     });
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  // busca paginada de produtos
+  // 🔎 Produtos (paginado)
   const fetchProdutos = async (page = 1, term = "") => {
     setProdLoading(true);
     const from = (page - 1) * PROD_PAGE_SIZE;
@@ -77,17 +74,17 @@ export default function App() {
     }
 
     const { data, error, count } = await query;
-    if (!error) {
+    if (error) {
+      console.error("Erro ao carregar produtos:", error);
+    } else {
       setProdutos(data || []);
       setProdTotal(count || 0);
       setProdPage(page);
-    } else {
-      console.error("Erro ao carregar produtos:", error);
     }
     setProdLoading(false);
   };
 
-  // máquinas, funcionários e movimentações
+  // 🔁 Máquinas / Funcionários / Movimentações
   const fetchOthers = async () => {
     try {
       const [maq, func, mov] = await Promise.all([
@@ -95,57 +92,70 @@ export default function App() {
         supabase.from("funcionarios").select("*").order("id", { ascending: true }),
         supabase
           .from("movimentacoes")
-          .select(`
+          .select(
+            `
             *,
             produtos (nome, localizacao),
             funcionarios (nome),
             maquinas (identificacao)
-          `)
+          `
+          )
           .order("created_at", { ascending: false }),
       ]);
 
-      if (maq.error) { console.error(maq.error); alert("Erro ao carregar máquinas: " + maq.error.message); }
-      if (func.error) { console.error(func.error); alert("Erro ao carregar funcionários: " + func.error.message); }
-      if (mov.error) { console.error(mov.error); alert("Erro ao carregar movimentações: " + mov.error.message); }
+      if (maq.error) {
+        console.error("Erro ao carregar máquinas:", maq.error);
+        alert("Erro ao carregar máquinas: " + maq.error.message);
+      }
+      if (func.error) {
+        console.error("Erro ao carregar funcionários:", func.error);
+        alert("Erro ao carregar funcionários: " + func.error.message);
+      }
+      if (mov.error) {
+        console.error("Erro ao carregar movimentações:", mov.error);
+        alert("Erro ao carregar movimentações: " + mov.error.message);
+      }
 
       setMaquinas(maq.data || []);
       setFuncionarios(func.data || []);
       setMovimentacoes(mov.data || []);
     } catch (e) {
       console.error("Falha geral ao carregar dados:", e);
-      alert("Falha geral ao carregar dados. Veja o console.");
+      alert("Falha geral ao carregar dados. Veja o console para detalhes.");
     }
   };
 
-  // carrega dados após login
+  // 🔄 Carrega dados quando logado
   useEffect(() => {
     if (!user) return;
     fetchProdutos(1, search);
     fetchOthers();
   }, [user]);
 
-  // pesquisa de produtos
+  // 🔎 Busca de produtos
   useEffect(() => {
     if (!user) return;
     fetchProdutos(1, search);
   }, [search, user]);
 
-  // login
+  // 🔐 Login/Logout
   const handleLogin = async (e) => {
     e.preventDefault();
     setErro("");
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password: senha,
+    });
     if (error) setErro("Erro ao fazer login: " + error.message);
     else setUser(data.user);
   };
 
-  // logout
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setUser(null);
   };
 
-  // salvar movimentação
+  // ➕ Movimentação
   const handleMovimentacao = async (mov) => {
     try {
       const prodId = mov.produtoId ?? null;
@@ -172,20 +182,21 @@ export default function App() {
       const { data, error } = await supabase
         .from("movimentacoes")
         .insert([payload])
-        .select(`
+        .select(
+          `
           *,
           produtos (nome, localizacao),
           funcionarios (nome),
           maquinas (identificacao)
-        `);
-
+        `
+        );
       if (error) {
         console.error("❌ Erro ao salvar movimentação:", error);
         alert("Erro ao salvar movimentação: " + (error.message || JSON.stringify(error)));
         return;
       }
 
-      // atualiza estoque
+      // Atualiza estoque local
       if (payload.produto_id) {
         const produto = produtos.find((p) => p.id === payload.produto_id);
         if (produto) {
@@ -198,7 +209,6 @@ export default function App() {
             .from("produtos")
             .update({ quantidade: novoEstoque })
             .eq("id", payload.produto_id);
-
           if (!estoqueError) fetchProdutos(prodPage, search);
         }
       }
@@ -210,7 +220,7 @@ export default function App() {
     }
   };
 
-  // excluir movimentação (reverte estoque)
+  // 🗑️ Excluir movimentação (reverte estoque)
   const handleExcluirMovimentacao = async (mov) => {
     try {
       if (!mov?.id) return alert("Movimentação inválida.");
@@ -259,7 +269,11 @@ export default function App() {
     }
   };
 
-  // tela de login
+  // ✅ Derivados (SEM useMemo – assim não muda a ordem de hooks)
+  const estoqueTotal = produtos.reduce((s, p) => s + Number(p.quantidade || 0), 0);
+  const ultimasMovs = (movimentacoes ?? []).slice(0, 8);
+
+  // 🔐 Tela de login
   if (!user) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-100">
@@ -288,43 +302,31 @@ export default function App() {
     );
   }
 
-  // métricas para o painel
-  const estoqueTotal = useMemo(
-    () => produtos.reduce((s, p) => s + Number(p.quantidade || 0), 0),
-    [produtos]
-  );
-  const ultimasMovs = useMemo(() => (movimentacoes || []).slice(0, 8), [movimentacoes]);
-
-  // itens da sidebar
-  const sideItems = [
-    { id: "Painel",          label: "Painel",        icon: LayoutDashboard },
-    { id: "Movimentações",   label: "Movimentações", icon: ClipboardIconFix }, // ícone simples abaixo
-    { id: "Produtos",        label: "Produtos",      icon: Package,  count: prodTotal },
-    { id: "Defensivos",      label: "Defensivos",    icon: Shield },
-    { id: "Inventário",      label: "Inventário",    icon: Warehouse },
-    { id: "Máquinas",        label: "Máquinas",      icon: Tractor,  count: maquinas.length },
-    { id: "Funcionários",    label: "Funcionários",  icon: Users,    count: funcionarios.length },
-    { id: "Colheita",        label: "Colheita",      icon: Wheat },
-    { id: "Plantios",        label: "Plantios",      icon: Sprout },
-  ];
+  // 🖥️ Sistema principal
+  const prodLastPage = Math.max(1, Math.ceil(prodTotal / PROD_PAGE_SIZE));
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-6">
-      {/* topo */}
-      <header className="flex items-center justify-between mb-4">
+    <div className="min-h-screen bg-slate-50 p-6">
+      {/* Cabeçalho com logo + nome */}
+      <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-3">
           <img
             src="/logo-fazenda.png"
             alt="Logo da fazenda"
             className="h-10 w-10 rounded-full object-cover ring-1 ring-black/5"
-            onError={(e) => (e.currentTarget.style.display = "none")}
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
           />
           <h1 className="text-2xl md:text-3xl font-bold">Fazenda Irmão coragem</h1>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-gray-600 hidden sm:inline">{user.email}</span>
+          <span className="text-gray-600">{user.email}</span>
           <button
-            onClick={() => { fetchProdutos(1, search); fetchOthers(); }}
+            onClick={() => {
+              fetchProdutos(1, search);
+              fetchOthers();
+            }}
             className="bg-slate-200 hover:bg-slate-300 text-slate-800 px-3 py-1 rounded-lg"
           >
             Recarregar dados
@@ -333,136 +335,168 @@ export default function App() {
             Sair
           </button>
         </div>
-      </header>
+      </div>
 
-      {/* layout com sidebar */}
-      <div className="grid md:grid-cols-[230px_1fr] gap-4">
-        <Sidebar items={sideItems} current={tab} onChange={setTab} />
+      <Tabs
+        tabs={[
+          "Painel", // opcional (usa <Dashboard />)
+          "Movimentações",
+          "Produtos",
+          "Defensivos",
+          "Inventário",
+          "Máquinas",
+          "Funcionários",
+          "Colheita",
+          "Plantios",
+        ]}
+        current={tab}
+        onChange={setTab}
+      />
 
-        <main className="space-y-6">
-          {tab === "Painel" && (
-            <Dashboard
-              produtosCount={prodTotal}
-              maquinasCount={maquinas.length}
-              funcionariosCount={funcionarios.length}
-              movimentacoesCount={movimentacoes.length}
-              estoqueTotal={estoqueTotal}
-              ultimasMovs={ultimasMovs}
+      <div className="mt-6">
+        {tab === "Painel" && (
+          <Dashboard
+            produtosCount={prodTotal}
+            maquinasCount={maquinas.length}
+            funcionariosCount={funcionarios.length}
+            movimentacoesCount={movimentacoes.length}
+            estoqueTotal={estoqueTotal}
+            ultimasMovs={ultimasMovs}
+          />
+        )}
+
+        {tab === "Movimentações" && (
+          <>
+            <MovForm
+              key={`mf-${maquinas.length}-${funcionarios.length}`}
+              produtos={produtos}
+              funcionarios={funcionarios}
+              maquinas={maquinas}
+              onAdd={handleMovimentacao}
             />
-          )}
+            <MovTable data={movimentacoes} onDelete={handleExcluirMovimentacao} />
+          </>
+        )}
 
-          {tab === "Movimentações" && (
-            <>
-              <MovForm
-                key={`mf-${maquinas.length}-${funcionarios.length}`}
-                produtos={produtos}
-                funcionarios={funcionarios}
-                maquinas={maquinas}
-                onAdd={handleMovimentacao}
-              />
-              <MovTable data={movimentacoes} onDelete={handleExcluirMovimentacao} />
-            </>
-          )}
-
-          {tab === "Produtos" && (
-            <>
-              <ProdutoForm
-                onAdd={async (p) => {
-                  try {
-                    const produtoCorrigido = {
-                      codigo: p.codigo?.toString().trim() || null,
-                      nome: p.nome?.trim(),
-                      localizacao: p.localizacao?.trim() || null,
-                      quantidade: Number(p.quantidade ?? 0),
-                    };
-                    if (!produtoCorrigido.nome) return alert("Informe o nome do produto.");
-                    const { error } = await supabase.from("produtos").insert([produtoCorrigido]);
-                    if (!error) fetchProdutos(1, search);
-                  } catch (e) {
-                    alert("Falha ao salvar produto: " + e.message);
+        {tab === "Produtos" && (
+          <>
+            <ProdutoForm
+              onAdd={async (p) => {
+                try {
+                  const produtoCorrigido = {
+                    codigo: p.codigo?.toString().trim() || null,
+                    nome: p.nome?.trim(),
+                    localizacao: p.localizacao?.trim() || null,
+                    quantidade: Number(p.quantidade ?? 0),
+                  };
+                  if (!produtoCorrigido.nome) {
+                    alert("Informe o nome do produto.");
+                    return;
                   }
-                }}
-              />
+                  const { error } = await supabase.from("produtos").insert([produtoCorrigido]);
+                  if (!error) fetchProdutos(1, search);
+                } catch (e) {
+                  alert("Falha ao salvar produto: " + e.message);
+                }
+              }}
+            />
 
-              <input
-                type="text"
-                placeholder="Pesquisar produto..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="border p-2 mt-4 w-full"
-              />
+            <input
+              type="text"
+              placeholder="Pesquisar produto..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="border p-2 mt-4 w-full"
+            />
 
-              {prodLoading ? <div className="p-4">Carregando produtos…</div> : <ProdutosTable data={produtos} />}
+            {prodLoading ? <div className="p-4">Carregando produtos…</div> : <ProdutosTable data={produtos} />}
 
-              <div className="flex flex-wrap items-center gap-2 mt-4">
-                <button onClick={() => fetchProdutos(1, search)} disabled={prodPage === 1} className="px-3 py-1 border rounded disabled:opacity-50">Primeiro</button>
-                <button onClick={() => fetchProdutos(prodPage - 1, search)} disabled={prodPage === 1} className="px-3 py-1 border rounded disabled:opacity-50">Anterior</button>
-                <span className="px-2">Total: {prodTotal} • Página {prodPage} de {Math.max(1, Math.ceil(prodTotal / PROD_PAGE_SIZE))}</span>
-                <button onClick={() => fetchProdutos(prodPage + 1, search)} disabled={prodPage >= Math.max(1, Math.ceil(prodTotal / PROD_PAGE_SIZE))} className="px-3 py-1 border rounded disabled:opacity-50">Próxima</button>
-                <button onClick={() => fetchProdutos(Math.max(1, Math.ceil(prodTotal / PROD_PAGE_SIZE)), search)} disabled={prodPage >= Math.max(1, Math.ceil(prodTotal / PROD_PAGE_SIZE))} className="px-3 py-1 border rounded disabled:opacity-50">Última</button>
-              </div>
-            </>
-          )}
+            {/* Paginação */}
+            <div className="flex flex-wrap items-center gap-2 mt-4">
+              <button onClick={() => fetchProdutos(1, search)} disabled={prodPage === 1} className="px-3 py-1 border rounded disabled:opacity-50">
+                Primeiro
+              </button>
+              <button
+                onClick={() => fetchProdutos(prodPage - 1, search)}
+                disabled={prodPage === 1}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+              >
+                Anterior
+              </button>
+              <span className="px-2">Total: {prodTotal} • Página {prodPage} de {prodLastPage}</span>
+              <button
+                onClick={() => fetchProdutos(prodPage + 1, search)}
+                disabled={prodPage >= prodLastPage}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+              >
+                Próxima
+              </button>
+              <button
+                onClick={() => fetchProdutos(prodLastPage, search)}
+                disabled={prodPage >= prodLastPage}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+              >
+                Última
+              </button>
+            </div>
+          </>
+        )}
 
-          {tab === "Defensivos" && <Defensivos />}
-          {tab === "Inventário" && <Inventario pageSize={50} />}
+        {tab === "Defensivos" && <Defensivos />}
 
-          {tab === "Máquinas" && (
-            <>
-              <MaquinaForm
-                onAdd={async (m) => {
-                  try {
-                    const maquinaCorrigida = {
-                      bem: m.bem ? Number(m.bem) : null,
-                      identificacao: m.identificacao?.trim(),
-                    };
-                    if (!maquinaCorrigida.identificacao) return alert("Informe a identificação da máquina.");
-                    const { data, error } = await supabase.from("maquinas").insert([maquinaCorrigida]).select();
-                    if (!error) setMaquinas((prev) => [...prev, ...data]);
-                  } catch (e) {
-                    alert("Falha ao salvar máquina: " + e.message);
+        {tab === "Inventário" && <Inventario pageSize={50} />}
+
+        {tab === "Máquinas" && (
+          <>
+            <MaquinaForm
+              onAdd={async (m) => {
+                try {
+                  const maquinaCorrigida = {
+                    bem: m.bem ? Number(m.bem) : null,
+                    identificacao: m.identificacao?.trim(),
+                  };
+                  if (!maquinaCorrigida.identificacao) {
+                    alert("Informe a identificação da máquina.");
+                    return;
                   }
-                }}
-              />
-              <MaquinasTable data={maquinas} />
-            </>
-          )}
+                  const { data, error } = await supabase.from("maquinas").insert([maquinaCorrigida]).select();
+                  if (!error) setMaquinas((prev) => [...prev, ...data]);
+                } catch (e) {
+                  alert("Falha ao salvar máquina: " + e.message);
+                }
+              }}
+            />
+            <MaquinasTable data={maquinas} />
+          </>
+        )}
 
-          {tab === "Funcionários" && (
-            <>
-              <FuncionarioForm
-                onAdd={async (f) => {
-                  try {
-                    const funcionarioCorrigido = {
-                      nome: f.nome?.trim(),
-                      funcao: f.funcao?.trim() || null,
-                    };
-                    if (!funcionarioCorrigido.nome) return alert("Informe o nome do funcionário.");
-                    const { data, error } = await supabase.from("funcionarios").insert([funcionarioCorrigido]).select();
-                    if (!error) setFuncionarios((prev) => [...prev, ...data]);
-                  } catch (e) {
-                    alert("Falha ao salvar funcionário: " + e.message);
+        {tab === "Funcionários" && (
+          <>
+            <FuncionarioForm
+              onAdd={async (f) => {
+                try {
+                  const funcionarioCorrigido = {
+                    nome: f.nome?.trim(),
+                    funcao: f.funcao?.trim() || null,
+                  };
+                  if (!funcionarioCorrigido.nome) {
+                    alert("Informe o nome do funcionário.");
+                    return;
                   }
-                }}
-              />
-              <FuncionariosTable data={funcionarios} />
-            </>
-          )}
+                  const { data, error } = await supabase.from("funcionarios").insert([funcionarioCorrigido]).select();
+                  if (!error) setFuncionarios((prev) => [...prev, ...data]);
+                } catch (e) {
+                  alert("Falha ao salvar funcionário: " + e.message);
+                }
+              }}
+            />
+            <FuncionariosTable data={funcionarios} />
+          </>
+        )}
 
-          {tab === "Colheita" && <Colheita />}
-          {tab === "Plantios" && <Plantios />}
-        </main>
+        {tab === "Colheita" && <Colheita />}
+        {tab === "Plantios" && <Plantios />}
       </div>
     </div>
-  );
-}
-
-/** Ícone simples para "Movimentações" sem puxar outro pacote */
-function ClipboardIconFix(props) {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
-      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
-      <rect x="9" y="3" width="6" height="4" rx="1" />
-    </svg>
   );
 }
