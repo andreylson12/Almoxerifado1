@@ -2,7 +2,9 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 
-import Tabs from "./components/Tabs";
+import Tabs from "./components/Tabs"; // usaremos só no mobile (lg:hidden)
+import Sidebar from "./components/Sidebar";
+
 import MovForm from "./components/MovForm";
 import MovTable from "./components/MovTable";
 import ProdutoForm from "./components/ProdutoForm";
@@ -23,7 +25,8 @@ const PROD_PAGE_SIZE = 50;
 export default function App() {
   // Auth / UI
   const [user, setUser] = useState(null);
-  const [tab, setTab] = useState("Movimentações");
+  const [tab, setTab] = useState("Painel"); // deixe Painel como padrão
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
@@ -269,7 +272,7 @@ export default function App() {
     }
   };
 
-  // ✅ Derivados (SEM useMemo – assim não muda a ordem de hooks)
+  // ✅ Derivados simples
   const estoqueTotal = produtos.reduce((s, p) => s + Number(p.quantidade || 0), 0);
   const ultimasMovs = (movimentacoes ?? []).slice(0, 8);
 
@@ -302,58 +305,71 @@ export default function App() {
     );
   }
 
-  // 🖥️ Sistema principal
+  // 🖥️ Layout com Sidebar
   const prodLastPage = Math.max(1, Math.ceil(prodTotal / PROD_PAGE_SIZE));
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      {/* Cabeçalho com logo + nome */}
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center gap-3">
-          <img
-            src="/logo-fazenda.png"
-            alt="Logo da fazenda"
-            className="h-10 w-10 rounded-full object-cover ring-1 ring-black/5"
-            onError={(e) => {
-              e.currentTarget.style.display = "none";
-            }}
-          />
-          <h1 className="text-2xl md:text-3xl font-bold">Fazenda Irmão coragem</h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-gray-600">{user.email}</span>
-          <button
-            onClick={() => {
-              fetchProdutos(1, search);
-              fetchOthers();
-            }}
-            className="bg-slate-200 hover:bg-slate-300 text-slate-800 px-3 py-1 rounded-lg"
-          >
-            Recarregar dados
-          </button>
-          <button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg">
-            Sair
-          </button>
-        </div>
+    <div className="min-h-screen bg-slate-50 flex">
+      {/* Sidebar fixa no desktop */}
+      <div className="hidden lg:block">
+        <Sidebar
+          current={tab}
+          onChange={setTab}
+          collapsed={sidebarCollapsed}
+          setCollapsed={setSidebarCollapsed}
+        />
       </div>
 
-      <Tabs
-        tabs={[
-          "Painel", // opcional (usa <Dashboard />)
-          "Movimentações",
-          "Produtos",
-          "Defensivos",
-          "Inventário",
-          "Máquinas",
-          "Funcionários",
-          "Colheita",
-          "Plantios",
-        ]}
-        current={tab}
-        onChange={setTab}
-      />
+      {/* Conteúdo */}
+      <div className="flex-1 p-6">
+        {/* Cabeçalho */}
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center gap-3">
+            <img
+              src="/logo-fazenda.png"
+              alt="Logo da fazenda"
+              className="h-10 w-10 rounded-full object-cover ring-1 ring-black/5"
+              onError={(e) => (e.currentTarget.style.display = "none")}
+            />
+            <h1 className="text-2xl md:text-3xl font-bold">Fazenda Irmão coragem</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-gray-600">{user.email}</span>
+            <button
+              onClick={() => {
+                fetchProdutos(1, search);
+                fetchOthers();
+              }}
+              className="bg-slate-200 hover:bg-slate-300 text-slate-800 px-3 py-1 rounded-lg"
+            >
+              Recarregar dados
+            </button>
+            <button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg">
+              Sair
+            </button>
+          </div>
+        </div>
 
-      <div className="mt-6">
+        {/* Navegação mobile (as Abas só no mobile) */}
+        <div className="lg:hidden mb-4">
+          <Tabs
+            tabs={[
+              "Painel",
+              "Movimentações",
+              "Produtos",
+              "Defensivos",
+              "Inventário",
+              "Máquinas",
+              "Funcionários",
+              "Colheita",
+              "Plantios",
+            ]}
+            current={tab}
+            onChange={setTab}
+          />
+        </div>
+
+        {/* Páginas */}
         {tab === "Painel" && (
           <Dashboard
             produtosCount={prodTotal}
