@@ -336,7 +336,7 @@ export default function App() {
           <img
             src="/logo-fazenda.png"
             alt="Logo da fazenda"
-            className="h-10 w-10 rounded-full object-cover ring-1 ring-black/5"
+            className="h-10 w-10 rounded-full object-cover ring-1 ring-green/5"
             onError={(e) => {
               e.currentTarget.style.display = "none";
             }}
