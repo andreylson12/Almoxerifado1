@@ -12,7 +12,8 @@ import FuncionarioForm from "./components/FuncionarioForm";
 import FuncionariosTable from "./components/FuncionariosTable";
 import Inventario from "./components/Inventario";
 import Defensivos from "./components/Defensivos";
-import Colheita from "./components/Colheita"; // ✅ NOVO
+import Colheita from "./components/Colheita"; 
+import Plantios from "./components/Plantios";// ✅ NOVO
 
 // 🔵 PAGINAÇÃO PRODUTOS
 const PROD_PAGE_SIZE = 50;
@@ -366,7 +367,8 @@ export default function App() {
           "Inventário",
           "Máquinas",
           "Funcionários",
-          "Colheita", // ✅ NOVO
+          "Colheita", 
+          "Plantios",// ✅ NOVO
         ]}
         current={tab}
         onChange={setTab}
@@ -512,6 +514,8 @@ export default function App() {
         )}
 
         {tab === "Colheita" && <Colheita />}{/* ✅ NOVO */}
+        {tab === "Plantios" && <Plantios />}
+
       </div>
     </div>
   );
