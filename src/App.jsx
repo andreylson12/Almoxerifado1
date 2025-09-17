@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 
-import Tabs from "./components/Tabs"; // usaremos só no mobile (lg:hidden)
+import Tabs from "./components/Tabs";         // usado só no mobile (lg:hidden)
 import Sidebar from "./components/Sidebar";
 
 import MovForm from "./components/MovForm";
@@ -276,31 +276,71 @@ export default function App() {
   const estoqueTotal = produtos.reduce((s, p) => s + Number(p.quantidade || 0), 0);
   const ultimasMovs = (movimentacoes ?? []).slice(0, 8);
 
-  // 🔐 Tela de login
+  // 🔐 Tela de login (PROFISSIONAL)
   if (!user) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-100">
-        <form onSubmit={handleLogin} className="bg-white p-6 rounded-xl shadow-lg w-80 space-y-4">
-          <h2 className="text-xl font-semibold text-center">Login</h2>
-          {erro && <p className="text-red-500 text-sm">{erro}</p>}
-          <input
-            type="email"
-            placeholder="Digite seu email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-400"
-          />
-          <input
-            type="password"
-            placeholder="Digite sua senha"
-            value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-400"
-          />
-          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg">
-            Entrar
-          </button>
-        </form>
+      <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-emerald-600 via-lime-600 to-green-700">
+        {/* imagem opcional (public/login-bg.jpg) */}
+        <img
+          src="/login-bg.jpg"
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-20"
+          onError={(e) => (e.currentTarget.style.display = "none")}
+        />
+        {/* shapes decorativas */}
+        <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-2xl" />
+        <div className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-black/10 blur-2xl" />
+
+        <div className="relative z-10 flex min-h-screen items-center justify-center p-6">
+          <div className="w-full max-w-md rounded-2xl bg-white/90 backdrop-blur shadow-xl ring-1 ring-black/5">
+            <div className="p-8">
+              <div className="mb-6 flex items-center gap-3">
+                <img
+                  src="/logo-fazenda.png"
+                  className="h-10 w-10 rounded-full ring-1 ring-black/5"
+                  alt="Logo"
+                  onError={(e) => (e.currentTarget.style.display = "none")}
+                />
+                <div className="text-xl font-semibold">Fazenda Irmão coragem</div>
+              </div>
+
+              <h2 className="mb-1 text-2xl font-bold">Bem-vindo</h2>
+              <p className="mb-6 text-sm text-slate-600">Faça login para acessar o sistema.</p>
+
+              {erro && (
+                <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {erro}
+                </div>
+              )}
+
+              <form onSubmit={handleLogin} className="space-y-4">
+                <input
+                  type="email"
+                  placeholder="Seu e-mail"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-emerald-500"
+                />
+                <input
+                  type="password"
+                  placeholder="Sua senha"
+                  value={senha}
+                  onChange={(e) => setSenha(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 focus:ring-2 focus:ring-emerald-500"
+                />
+                <button
+                  type="submit"
+                  className="w-full rounded-lg bg-emerald-600 py-2 font-medium text-white hover:bg-emerald-700"
+                >
+                  Entrar
+                </button>
+              </form>
+            </div>
+            <div className="rounded-b-2xl bg-slate-50/70 px-8 py-3 text-center text-xs text-slate-500">
+              © {new Date().getFullYear()} Fazenda Irmão coragem
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -310,7 +350,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-lime-50 to-white flex">
-
       {/* Sidebar fixa no desktop */}
       <div className="hidden lg:block">
         <Sidebar
@@ -324,7 +363,7 @@ export default function App() {
       {/* Conteúdo */}
       <div className="flex-1 p-6">
         {/* Cabeçalho */}
-        <div className="flex justify-between items-center mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img
               src="/logo-fazenda.png"
@@ -341,11 +380,14 @@ export default function App() {
                 fetchProdutos(1, search);
                 fetchOthers();
               }}
-              className="bg-slate-200 hover:bg-slate-300 text-slate-800 px-3 py-1 rounded-lg"
+              className="rounded-lg bg-slate-200 px-3 py-1 text-slate-800 hover:bg-slate-300"
             >
               Recarregar dados
             </button>
-            <button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg">
+            <button
+              onClick={handleLogout}
+              className="rounded-lg bg-red-600 px-3 py-1 text-white hover:bg-red-700"
+            >
               Sair
             </button>
           </div>
@@ -423,35 +465,37 @@ export default function App() {
               placeholder="Pesquisar produto..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="border p-2 mt-4 w-full"
+              className="mt-4 w-full border p-2"
             />
 
             {prodLoading ? <div className="p-4">Carregando produtos…</div> : <ProdutosTable data={produtos} />}
 
             {/* Paginação */}
-            <div className="flex flex-wrap items-center gap-2 mt-4">
-              <button onClick={() => fetchProdutos(1, search)} disabled={prodPage === 1} className="px-3 py-1 border rounded disabled:opacity-50">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button onClick={() => fetchProdutos(1, search)} disabled={prodPage === 1} className="rounded border px-3 py-1 disabled:opacity-50">
                 Primeiro
               </button>
               <button
                 onClick={() => fetchProdutos(prodPage - 1, search)}
                 disabled={prodPage === 1}
-                className="px-3 py-1 border rounded disabled:opacity-50"
+                className="rounded border px-3 py-1 disabled:opacity-50"
               >
                 Anterior
               </button>
-              <span className="px-2">Total: {prodTotal} • Página {prodPage} de {prodLastPage}</span>
+              <span className="px-2">
+                Total: {prodTotal} • Página {prodPage} de {Math.max(1, Math.ceil(prodTotal / PROD_PAGE_SIZE))}
+              </span>
               <button
                 onClick={() => fetchProdutos(prodPage + 1, search)}
-                disabled={prodPage >= prodLastPage}
-                className="px-3 py-1 border rounded disabled:opacity-50"
+                disabled={prodPage >= Math.max(1, Math.ceil(prodTotal / PROD_PAGE_SIZE))}
+                className="rounded border px-3 py-1 disabled:opacity-50"
               >
                 Próxima
               </button>
               <button
-                onClick={() => fetchProdutos(prodLastPage, search)}
-                disabled={prodPage >= prodLastPage}
-                className="px-3 py-1 border rounded disabled:opacity-50"
+                onClick={() => fetchProdutos(Math.max(1, Math.ceil(prodTotal / PROD_PAGE_SIZE)), search)}
+                disabled={prodPage >= Math.max(1, Math.ceil(prodTotal / PROD_PAGE_SIZE))}
+                className="rounded border px-3 py-1 disabled:opacity-50"
               >
                 Última
               </button>
