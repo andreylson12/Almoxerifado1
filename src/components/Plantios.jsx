@@ -1,34 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import TalhoesManager from "./TalhoesManager";
 
-/** ========================= Helpers de cálculo ========================= */
+/* ====== Helpers de sementes (os mesmos da versão anterior) ====== */
 function calcSeedsPerKg(pms_g) {
   const pms = Number(pms_g || 0);
   if (!pms || pms <= 0) return 0;
-  // PMS (g / 1000 sementes) ⇒ sementes/kg = 1.000.000 / PMS
   return 1_000_000 / pms;
 }
-
 function calcNecessidades({
   areaHa = 0,
   populacaoHa = 0,
   germ_pct = 90,
   pureza_pct = 98,
   perdas_pct = 5,
-  tipo_embalagem = "saco",  // 'saco' | 'bigbag' (apenas rótulo)
-  kg_por_embalagem = 20,    // 20, 25, 600, 1000...
-  sementes_por_saco,        // se fornecedor informar (prioridade 1)
-  pms_g,                    // caso contrário, usa PMS (prioridade 2)
+  tipo_embalagem = "saco",
+  kg_por_embalagem = 20,
+  sementes_por_saco,
+  pms_g,
 }) {
   const area = Number(areaHa || 0);
   const pop = Number(populacaoHa || 0);
-
   const g = Math.max(0.5, Number(germ_pct || 0) / 100);
   const p = Math.max(0.5, Number(pureza_pct || 0) / 100);
   const perdas = Math.min(0.3, Math.max(0, Number(perdas_pct || 0) / 100));
   const ajuste = 1 / (g * p * (1 - perdas));
-
   const sementesNec = area * pop * ajuste;
 
   const kgEmb = Number(kg_por_embalagem || 0) > 0 ? Number(kg_por_embalagem) : 0;
@@ -37,7 +34,6 @@ function calcNecessidades({
   let sementesPorKg = 0;
 
   if (Number(sementes_por_saco || 0) > 0) {
-    // fornecedor informou sementes por embalagem (saco/bigbag)
     sementesPorEmb = Number(sementes_por_saco);
     sementesPorKg = kgEmb ? sementesPorEmb / kgEmb : 0;
   } else if (Number(pms_g || 0) > 0) {
@@ -48,19 +44,11 @@ function calcNecessidades({
   const kgNec = sementesPorKg > 0 ? sementesNec / sementesPorKg : 0;
   const embalagensNec = kgEmb > 0 ? kgNec / kgEmb : 0;
 
-  return {
-    sementesNec,        // unidades
-    kgNec,              // kg
-    embalagensNec,      // nº estimado de sacos/big bags
-    sementesPorKg,
-    sementesPorEmb,
-    tipo_embalagem,
-  };
+  return { sementesNec, kgNec, embalagensNec, sementesPorKg, sementesPorEmb, tipo_embalagem };
 }
 
-/** ========================= Componente ========================= */
 export default function Plantios() {
-  // filtros simples (ano/safra/cultura)
+  // filtros
   const [fSafra, setFSafra] = useState("");
   const [fCultura, setFCultura] = useState("");
 
@@ -68,30 +56,31 @@ export default function Plantios() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // formulário
+  // talhões
+  const [talhoes, setTalhoes] = useState([]);
+  const [showTalhoes, setShowTalhoes] = useState(false);
+
+  // form
   const [form, setForm] = useState({
     data_plantio: new Date().toISOString().slice(0, 10),
     cultura: "",
     safra: "",
-    talhao: "",
+    talhao: "",           // agora vem do dropdown (nome)
     area_ha: "",
     espacamento: "",
     populacao_ha: "",
     obs: "",
 
-    // embalagem / qualidade
-    tipo_embalagem: "saco",   // 'saco' | 'bigbag'
-    kg_por_embalagem: 20,     // 20, 25, 600, 1000...
-    sementes_por_saco: "",    // se fornecedor informar diretamente
-    pms_g: "",                // alternativa via PMS
+    tipo_embalagem: "saco",
+    kg_por_embalagem: 20,
+    sementes_por_saco: "",
+    pms_g: "",
     germinacao_pct: 90,
     pureza_pct: 98,
     perdas_pct: 5,
   });
-
   const setF = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
-  /** ========================= Carregar do Supabase ========================= */
   const fetchPlantios = async () => {
     setLoading(true);
     try {
@@ -115,18 +104,32 @@ export default function Plantios() {
     }
   };
 
+  const fetchTalhoes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("talhoes")
+        .select("*")
+        .order("nome", { ascending: true });
+      if (error) throw error;
+      setTalhoes(data || []);
+    } catch (e) {
+      console.error(e);
+      alert("Falha ao carregar talhões.");
+    }
+  };
+
   useEffect(() => {
     fetchPlantios();
-  }, []); // carrega ao abrir
+    fetchTalhoes();
+  }, []);
 
-  /** ========================= Salvar novo plantio ========================= */
   const addPlantio = async () => {
     try {
       const payload = {
         data_plantio: form.data_plantio || null,
         cultura: form.cultura || null,
         safra: form.safra || null,
-        talhao: form.talhao || null,
+        talhao: form.talhao || null,                // nome do talhão selecionado
         area_ha: form.area_ha ? Number(form.area_ha) : null,
         espacamento: form.espacamento ? Number(form.espacamento) : null,
         populacao_ha: form.populacao_ha ? Number(form.populacao_ha) : null,
@@ -142,6 +145,7 @@ export default function Plantios() {
       };
 
       if (!payload.cultura) return alert("Informe a cultura.");
+      if (!payload.talhao) return alert("Selecione um talhão.");
       if (!payload.area_ha) return alert("Informe a área (ha).");
       if (!payload.populacao_ha) return alert("Informe a população (sementes/ha).");
 
@@ -150,7 +154,6 @@ export default function Plantios() {
 
       setForm((s) => ({
         ...s,
-        talhao: "",
         obs: "",
       }));
       fetchPlantios();
@@ -160,21 +163,18 @@ export default function Plantios() {
     }
   };
 
-  /** ========================= Excluir ========================= */
   const removePlantio = async (row) => {
-    const ok = window.confirm("Deseja excluir este plantio?");
-    if (!ok) return;
+    if (!confirm("Deseja excluir este plantio?")) return;
     try {
       const { error } = await supabase.from("plantios").delete().eq("id", row.id);
       if (error) throw error;
       setRows((prev) => prev.filter((r) => r.id !== row.id));
-    } catch (err) {
-      console.error(err);
+    } catch (e) {
+      console.error(e);
       alert("Falha ao excluir plantio.");
     }
   };
 
-  /** ========================= Filtro local ========================= */
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       if (fSafra && !(r.safra || "").toLowerCase().includes(fSafra.toLowerCase())) return false;
@@ -183,8 +183,15 @@ export default function Plantios() {
     });
   }, [rows, fSafra, fCultura]);
 
-  /** ========================= Totais (opcional) ========================= */
   const totalArea = filtered.reduce((s, r) => s + Number(r.area_ha || 0), 0);
+
+  /* ===== lookup: se usuário escolher um talhão, sugere a área_ha do cadastro */
+  useEffect(() => {
+    const t = talhoes.find((x) => x.nome === form.talhao);
+    if (t && !form.area_ha) {
+      setF("area_ha", t.area_ha ?? "");
+    }
+  }, [form.talhao, talhoes]); // só preenche se vazio
 
   return (
     <div className="space-y-5">
@@ -213,12 +220,30 @@ export default function Plantios() {
           </div>
           <div className="p-2 bg-slate-50 rounded flex items-center justify-between">
             <span className="text-slate-600 text-sm">Área total (ha)</span>
-            <span className="font-semibold">{totalArea.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+            <span className="font-semibold">
+              {totalArea.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Formulário */}
+      {/* Gerenciar Talhões (toggle) */}
+      <div className="bg-white rounded-lg shadow">
+        <button
+          className="w-full flex items-center justify-between px-4 py-3"
+          onClick={() => setShowTalhoes((s) => !s)}
+        >
+          <span className="font-semibold">Gerenciar Talhões</span>
+          {showTalhoes ? <ChevronUp /> : <ChevronDown />}
+        </button>
+        {showTalhoes && (
+          <div className="p-4 border-t">
+            <TalhoesManager onChanged={fetchTalhoes} />
+          </div>
+        )}
+      </div>
+
+      {/* Formulário Plantio */}
       <div className="bg-white p-4 rounded-lg shadow space-y-4">
         <h3 className="font-semibold text-lg">Novo plantio</h3>
 
@@ -229,8 +254,21 @@ export default function Plantios() {
                  value={form.cultura} onChange={(e)=>setF("cultura", e.target.value)} />
           <input className="border rounded px-3 py-2" placeholder="Safra (ex: 2024/25)"
                  value={form.safra} onChange={(e)=>setF("safra", e.target.value)} />
-          <input className="border rounded px-3 py-2" placeholder="Talhão"
-                 value={form.talhao} onChange={(e)=>setF("talhao", e.target.value)} />
+
+          {/* Talhão dropdown */}
+          <select
+            className="border rounded px-3 py-2"
+            value={form.talhao}
+            onChange={(e) => setF("talhao", e.target.value)}
+          >
+            <option value="">Selecione o talhão…</option>
+            {talhoes.map((t) => (
+              <option key={t.id} value={t.nome}>
+                {t.nome} {t.area_ha ? `• ${t.area_ha} ha` : ""}
+              </option>
+            ))}
+          </select>
+
           <input className="border rounded px-3 py-2" type="number" placeholder="Área (ha)"
                  value={form.area_ha} onChange={(e)=>setF("area_ha", e.target.value)} />
         </div>
@@ -244,7 +282,7 @@ export default function Plantios() {
                  value={form.obs} onChange={(e)=>setF("obs", e.target.value)} />
         </div>
 
-        {/* Embalagem / Qualidade */}
+        {/* Embalagem / Qualidade (iguais à versão anterior) */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           <div>
             <label className="text-xs text-slate-500">Tipo de embalagem</label>
@@ -294,27 +332,9 @@ export default function Plantios() {
           <div>
             <label className="text-xs text-slate-500">Germinação / Pureza / Perdas (%)</label>
             <div className="grid grid-cols-3 gap-2">
-              <input
-                type="number"
-                className="border rounded px-2 py-2 w-full"
-                value={form.germinacao_pct}
-                onChange={(e)=>setF("germinacao_pct", e.target.value)}
-                placeholder="90"
-              />
-              <input
-                type="number"
-                className="border rounded px-2 py-2 w-full"
-                value={form.pureza_pct}
-                onChange={(e)=>setF("pureza_pct", e.target.value)}
-                placeholder="98"
-              />
-              <input
-                type="number"
-                className="border rounded px-2 py-2 w-full"
-                value={form.perdas_pct}
-                onChange={(e)=>setF("perdas_pct", e.target.value)}
-                placeholder="5"
-              />
+              <input type="number" className="border rounded px-2 py-2 w-full" value={form.germinacao_pct} onChange={(e)=>setF("germinacao_pct", e.target.value)} placeholder="90" />
+              <input type="number" className="border rounded px-2 py-2 w-full" value={form.pureza_pct} onChange={(e)=>setF("pureza_pct", e.target.value)} placeholder="98" />
+              <input type="number" className="border rounded px-2 py-2 w-full" value={form.perdas_pct} onChange={(e)=>setF("perdas_pct", e.target.value)} placeholder="5" />
             </div>
           </div>
         </div>
@@ -423,7 +443,9 @@ export default function Plantios() {
                     <td className="p-2">{r.safra || "—"}</td>
                     <td className="p-2">{r.cultura || "—"}</td>
                     <td className="p-2">{r.talhao || "—"}</td>
-                    <td className="p-2 text-right">{Number(r.area_ha || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                    <td className="p-2 text-right">
+                      {Number(r.area_ha || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </td>
                     <td className="p-2 text-right">{Number(r.populacao_ha || 0).toLocaleString()}</td>
                     <td className="p-2">
                       {r.tipo_embalagem || "—"}{" "}
