@@ -1,3 +1,4 @@
+// src/components/TalhoesManager.jsx
 import { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { Loader2, Trash2, PencilLine, X } from "lucide-react";
@@ -5,6 +6,7 @@ import { Loader2, Trash2, PencilLine, X } from "lucide-react";
 export default function TalhoesManager({ onChanged }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [form, setForm] = useState({ nome: "", area_ha: "", obs: "" });
   const [editing, setEditing] = useState(null);
@@ -16,13 +18,14 @@ export default function TalhoesManager({ onChanged }) {
     try {
       const { data, error } = await supabase
         .from("talhoes")
-        .select("*")
-        .order("nome", { ascending: true });
+        .select("id, nome, area_ha, obs")
+        .order("nome", { ascending: true, nullsFirst: false });
+
       if (error) throw error;
       setRows(data || []);
     } catch (e) {
-      console.error(e);
-      alert("Falha ao carregar talhões.");
+      console.error("Erro ao carregar talhões:", e);
+      alert(`Falha ao carregar talhões.\n${e.message || ""}`);
     } finally {
       setLoading(false);
     }
@@ -35,13 +38,19 @@ export default function TalhoesManager({ onChanged }) {
   const save = async () => {
     try {
       if (!form.nome?.trim()) return alert("Informe o nome do talhão.");
+      setSaving(true);
+
       const payload = {
         nome: form.nome.trim(),
-        area_ha: form.area_ha ? Number(form.area_ha) : null,
+        area_ha: form.area_ha !== "" && form.area_ha !== null ? Number(form.area_ha) : null,
         obs: form.obs?.trim() || null,
       };
 
-      if (editing) {
+      if (Number.isNaN(payload.area_ha)) {
+        return alert("Área (ha) deve ser um número válido.");
+      }
+
+      if (editing?.id) {
         const { error } = await supabase
           .from("talhoes")
           .update(payload)
@@ -57,8 +66,10 @@ export default function TalhoesManager({ onChanged }) {
       await fetchTalhoes();
       onChanged?.();
     } catch (e) {
-      console.error(e);
-      alert("Falha ao salvar talhão.");
+      console.error("Erro ao salvar talhão:", e);
+      alert(`Falha ao salvar talhão.\n${e.message || ""}`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -84,8 +95,8 @@ export default function TalhoesManager({ onChanged }) {
       await fetchTalhoes();
       onChanged?.();
     } catch (e) {
-      console.error(e);
-      alert("Falha ao excluir talhão.");
+      console.error("Erro ao excluir talhão:", e);
+      alert(`Falha ao excluir talhão.\n${e.message || ""}`);
     }
   };
 
@@ -96,7 +107,10 @@ export default function TalhoesManager({ onChanged }) {
         <div className="flex items-center justify-between mb-2">
           <h4 className="font-semibold">{editing ? "Editar talhão" : "Novo talhão"}</h4>
           {editing && (
-            <button onClick={cancelEdit} className="text-slate-600 hover:text-slate-900 inline-flex items-center gap-1">
+            <button
+              onClick={cancelEdit}
+              className="text-slate-600 hover:text-slate-900 inline-flex items-center gap-1"
+            >
               <X className="h-4 w-4" /> Cancelar
             </button>
           )}
@@ -113,6 +127,7 @@ export default function TalhoesManager({ onChanged }) {
             className="border rounded px-3 py-2"
             placeholder="Área (ha)"
             type="number"
+            inputMode="decimal"
             value={form.area_ha}
             onChange={(e) => setF("area_ha", e.target.value)}
           />
@@ -127,9 +142,12 @@ export default function TalhoesManager({ onChanged }) {
         <div className="flex justify-end mt-3">
           <button
             onClick={save}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded"
+            disabled={saving}
+            className={`px-4 py-2 rounded text-white ${
+              saving ? "bg-emerald-400 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700"
+            }`}
           >
-            {editing ? "Salvar alterações" : "Adicionar"}
+            {saving ? "Salvando..." : editing ? "Salvar alterações" : "Adicionar"}
           </button>
         </div>
       </div>
