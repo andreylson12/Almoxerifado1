@@ -1,10 +1,10 @@
+// src/components/Plantios.jsx
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { Loader2, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import TalhoesManager from "./TalhoesManager";
-import FazendaSelect from "./FazendaSelect";
 
-/* ====== Helpers de sementes ====== */
+/* ===== Helpers de sementes ===== */
 function calcSeedsPerKg(pms_g) {
   const pms = Number(pms_g || 0);
   if (!pms || pms <= 0) return 0;
@@ -53,14 +53,15 @@ export default function Plantios() {
   const [fSafra, setFSafra] = useState("");
   const [fCultura, setFCultura] = useState("");
 
-  // filtro por fazenda (novo)
-  const [fazendaId, setFazendaId] = useState(null);
+  // (Opcional) Fazendas – mantive simples para quem já tem a tabela `fazendas`
+  const [fazendas, setFazendas] = useState([]);
+  const [fazendaSelecionada, setFazendaSelecionada] = useState("");
 
   // dados
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // talhões (filtrados por fazenda)
+  // talhões
   const [talhoes, setTalhoes] = useState([]);
   const [showTalhoes, setShowTalhoes] = useState(false);
 
@@ -69,7 +70,7 @@ export default function Plantios() {
     data_plantio: new Date().toISOString().slice(0, 10),
     cultura: "",
     safra: "",
-    talhao: "",           // nome do talhão (dropdown)
+    talhao: "",
     area_ha: "",
     espacamento: "",
     populacao_ha: "",
@@ -85,6 +86,21 @@ export default function Plantios() {
   });
   const setF = (k, v) => setForm((s) => ({ ...s, [k]: v }));
 
+  /* ==== carregadores ==== */
+  const fetchFazendas = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("fazendas")
+        .select("id, nome")
+        .order("nome", { ascending: true });
+      if (error) throw error;
+      setFazendas(data || []);
+    } catch {
+      // se você não usa fazendas ainda, só ignora silenciosamente
+      setFazendas([]);
+    }
+  };
+
   const fetchPlantios = async () => {
     setLoading(true);
     try {
@@ -93,6 +109,9 @@ export default function Plantios() {
         .select("*")
         .order("data_plantio", { ascending: false })
         .order("id", { ascending: false });
+
+      // (se seu schema tiver `fazenda_id`, você pode filtrar aqui)
+      // if (fazendaSelecionada) q = q.eq("fazenda_id", fazendaSelecionada);
 
       if (fSafra) q = q.ilike("safra", `%${fSafra}%`);
       if (fCultura) q = q.ilike("cultura", `%${fCultura}%`);
@@ -110,9 +129,10 @@ export default function Plantios() {
 
   const fetchTalhoes = async () => {
     try {
-      let q = supabase.from("talhoes").select("*").order("nome", { ascending: true });
-      if (fazendaId) q = q.eq("fazenda_id", fazendaId);
-      const { data, error } = await q;
+      const { data, error } = await supabase
+        .from("talhoes")
+        .select("*")
+        .order("nome", { ascending: true });
       if (error) throw error;
       setTalhoes(data || []);
     } catch (e) {
@@ -122,25 +142,19 @@ export default function Plantios() {
   };
 
   useEffect(() => {
+    fetchFazendas();
     fetchPlantios();
+    fetchTalhoes();
   }, []);
 
-  useEffect(() => {
-    fetchTalhoes();
-    // ao trocar de fazenda, se o talhão atual não pertence a ela, limpa o campo
-    setForm((s) => {
-      const stillValid = talhoes.some((t) => t.nome === s.talhao && (!fazendaId || t.fazenda_id === Number(fazendaId)));
-      return stillValid ? s : { ...s, talhao: "", area_ha: "" };
-    });
-  }, [fazendaId]);
-
+  /* ==== ações ==== */
   const addPlantio = async () => {
     try {
       const payload = {
         data_plantio: form.data_plantio || null,
         cultura: form.cultura || null,
         safra: form.safra || null,
-        talhao: form.talhao || null,                // nome do talhão selecionado
+        talhao: form.talhao || null,
         area_ha: form.area_ha ? Number(form.area_ha) : null,
         espacamento: form.espacamento ? Number(form.espacamento) : null,
         populacao_ha: form.populacao_ha ? Number(form.populacao_ha) : null,
@@ -153,6 +167,9 @@ export default function Plantios() {
         germinacao_pct: form.germinacao_pct ? Number(form.germinacao_pct) : null,
         pureza_pct: form.pureza_pct ? Number(form.pureza_pct) : null,
         perdas_pct: form.perdas_pct ? Number(form.perdas_pct) : null,
+
+        // Se você tiver `fazenda_id` no schema, adicione:
+        // fazenda_id: fazendaSelecionada || null,
       };
 
       if (!payload.cultura) return alert("Informe a cultura.");
@@ -183,69 +200,98 @@ export default function Plantios() {
     }
   };
 
+  /* ==== derivados ==== */
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       if (fSafra && !(r.safra || "").toLowerCase().includes(fSafra.toLowerCase())) return false;
       if (fCultura && !(r.cultura || "").toLowerCase().includes(fCultura.toLowerCase())) return false;
+      // Se tiver fazenda_id no schema, ative:
+      // if (fazendaSelecionada && r.fazenda_id !== fazendaSelecionada) return false;
       return true;
     });
-  }, [rows, fSafra, fCultura]);
+  }, [rows, fSafra, fCultura /*, fazendaSelecionada */]);
 
   const totalArea = filtered.reduce((s, r) => s + Number(r.area_ha || 0), 0);
 
-  // auto-preenche área do talhão escolhido (se o cadastro tiver área)
+  // Sugerir área do talhão escolhido (se vazio)
   useEffect(() => {
     const t = talhoes.find((x) => x.nome === form.talhao);
     if (t && !form.area_ha) {
       setF("area_ha", t.area_ha ?? "");
     }
-  }, [form.talhao, talhoes]); // só preenche se vazio
+  }, [form.talhao, talhoes]);
 
   return (
     <div className="space-y-5">
-      {/* Filtros + Resumo */}
+      {/* ===== Filtros + resumo (layout novo) ===== */}
       <div className="bg-white p-4 rounded-lg shadow space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          {/* Seletor de Fazenda (novo) */}
-          <div className="md:col-span-2">
-            <label className="text-xs text-slate-600">Fazenda</label>
-            <FazendaSelect
-              value={fazendaId}
-              onChange={(id) => setFazendaId(id ? Number(id) : null)}
-              allowCreate={true}
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+          {/* Fazenda (2 colunas) */}
+          <div className="col-span-2">
+            <label className="text-xs text-slate-500">Fazenda</label>
+            <select
+              className="border rounded px-3 py-2 w-full"
+              value={fazendaSelecionada}
+              onChange={(e) => setFazendaSelecionada(e.target.value)}
+            >
+              <option value="">Selecione a fazenda…</option>
+              {fazendas.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Safra */}
+          <div>
+            <label className="text-xs text-slate-500">Safra</label>
+            <input
+              className="border rounded px-3 py-2 w-full"
+              placeholder="ex: 2024/25"
+              value={fSafra}
+              onChange={(e) => setFSafra(e.target.value)}
             />
           </div>
 
-          <input
-            className="border rounded px-3 py-2"
-            placeholder="Safra (ex: 2024/25)"
-            value={fSafra}
-            onChange={(e) => setFSafra(e.target.value)}
-          />
-          <input
-            className="border rounded px-3 py-2"
-            placeholder="Cultura (ex: Soja)"
-            value={fCultura}
-            onChange={(e) => setFCultura(e.target.value)}
-          />
-          <button onClick={fetchPlantios} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">
-            Atualizar
-          </button>
+          {/* Cultura */}
+          <div>
+            <label className="text-xs text-slate-500">Cultura</label>
+            <input
+              className="border rounded px-3 py-2 w-full"
+              placeholder="ex: Soja"
+              value={fCultura}
+              onChange={(e) => setFCultura(e.target.value)}
+            />
+          </div>
 
-          <div className="p-2 bg-slate-50 rounded flex items-center justify-between">
-            <span className="text-slate-600 text-sm">Registros</span>
-            <span className="font-semibold">{filtered.length}</span>
+          {/* Botão Atualizar */}
+          <div>
+            <button
+              onClick={fetchPlantios}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded w-full"
+            >
+              Atualizar
+            </button>
           </div>
-          <div className="p-2 bg-slate-50 rounded flex items-center justify-between md:col-span-1">
-            <span className="text-slate-600 text-sm">Área total (ha)</span>
-            <span className="font-semibold">
-              {totalArea.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-            </span>
+
+          {/* Registros */}
+          <div className="p-2 bg-slate-50 rounded text-center">
+            <div className="text-slate-600 text-sm">Registros</div>
+            <div className="font-semibold">{filtered.length}</div>
           </div>
+        </div>
+
+        {/* Área total – linha abaixo, mais legível */}
+        <div className="p-2 bg-slate-50 rounded flex items-center justify-between">
+          <span className="text-slate-600 text-sm">Área total (ha)</span>
+          <span className="font-semibold">
+            {totalArea.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          </span>
         </div>
       </div>
 
-      {/* Gerenciar Talhões (toggle) */}
+      {/* ===== Gerenciar Talhões (toggle) ===== */}
       <div className="bg-white rounded-lg shadow">
         <button
           className="w-full flex items-center justify-between px-4 py-3"
@@ -256,15 +302,12 @@ export default function Plantios() {
         </button>
         {showTalhoes && (
           <div className="p-4 border-t">
-            {/* O TalhoesManager já tem seu próprio seletor de fazenda.
-                Se quiser forçar usar a mesma fazenda selecionada aqui, podemos
-                depois expor uma prop para controlar isso. */}
             <TalhoesManager onChanged={fetchTalhoes} />
           </div>
         )}
       </div>
 
-      {/* Formulário Plantio */}
+      {/* ===== Formulário Plantio ===== */}
       <div className="bg-white p-4 rounded-lg shadow space-y-4">
         <h3 className="font-semibold text-lg">Novo plantio</h3>
 
@@ -273,22 +316,21 @@ export default function Plantios() {
             type="date"
             className="border rounded px-3 py-2"
             value={form.data_plantio}
-            onChange={(e)=>setF("data_plantio", e.target.value)}
+            onChange={(e) => setF("data_plantio", e.target.value)}
           />
           <input
             className="border rounded px-3 py-2"
             placeholder="Cultura (ex: Soja)"
             value={form.cultura}
-            onChange={(e)=>setF("cultura", e.target.value)}
+            onChange={(e) => setF("cultura", e.target.value)}
           />
           <input
             className="border rounded px-3 py-2"
             placeholder="Safra (ex: 2024/25)"
             value={form.safra}
-            onChange={(e)=>setF("safra", e.target.value)}
+            onChange={(e) => setF("safra", e.target.value)}
           />
 
-          {/* Talhão dropdown (filtrado por fazenda) */}
           <select
             className="border rounded px-3 py-2"
             value={form.talhao}
@@ -307,7 +349,7 @@ export default function Plantios() {
             type="number"
             placeholder="Área (ha)"
             value={form.area_ha}
-            onChange={(e)=>setF("area_ha", e.target.value)}
+            onChange={(e) => setF("area_ha", e.target.value)}
           />
         </div>
 
@@ -317,20 +359,20 @@ export default function Plantios() {
             type="number"
             placeholder="Espaçamento"
             value={form.espacamento}
-            onChange={(e)=>setF("espacamento", e.target.value)}
+            onChange={(e) => setF("espacamento", e.target.value)}
           />
           <input
             className="border rounded px-3 py-2"
             type="number"
             placeholder="População (sementes/ha)"
             value={form.populacao_ha}
-            onChange={(e)=>setF("populacao_ha", e.target.value)}
+            onChange={(e) => setF("populacao_ha", e.target.value)}
           />
           <input
             className="border rounded px-3 py-2"
             placeholder="Observações"
             value={form.obs}
-            onChange={(e)=>setF("obs", e.target.value)}
+            onChange={(e) => setF("obs", e.target.value)}
           />
         </div>
 
@@ -341,7 +383,7 @@ export default function Plantios() {
             <select
               className="border rounded px-3 py-2 w-full"
               value={form.tipo_embalagem}
-              onChange={(e)=>setF("tipo_embalagem", e.target.value)}
+              onChange={(e) => setF("tipo_embalagem", e.target.value)}
             >
               <option value="saco">Saco</option>
               <option value="bigbag">Big bag</option>
@@ -354,7 +396,7 @@ export default function Plantios() {
               type="number"
               className="border rounded px-3 py-2 w-full"
               value={form.kg_por_embalagem}
-              onChange={(e)=>setF("kg_por_embalagem", e.target.value)}
+              onChange={(e) => setF("kg_por_embalagem", e.target.value)}
               placeholder="20 | 25 | 600 | 1000"
             />
           </div>
@@ -365,7 +407,7 @@ export default function Plantios() {
               type="number"
               className="border rounded px-3 py-2 w-full"
               value={form.sementes_por_saco}
-              onChange={(e)=>setF("sementes_por_saco", e.target.value)}
+              onChange={(e) => setF("sementes_por_saco", e.target.value)}
               placeholder="ex: 60000"
             />
           </div>
@@ -376,7 +418,7 @@ export default function Plantios() {
               type="number"
               className="border rounded px-3 py-2 w-full"
               value={form.pms_g}
-              onChange={(e)=>setF("pms_g", e.target.value)}
+              onChange={(e) => setF("pms_g", e.target.value)}
               placeholder="ex: 180"
             />
           </div>
@@ -384,9 +426,27 @@ export default function Plantios() {
           <div>
             <label className="text-xs text-slate-500">Germinação / Pureza / Perdas (%)</label>
             <div className="grid grid-cols-3 gap-2">
-              <input type="number" className="border rounded px-2 py-2 w-full" value={form.germinacao_pct} onChange={(e)=>setF("germinacao_pct", e.target.value)} placeholder="90" />
-              <input type="number" className="border rounded px-2 py-2 w-full" value={form.pureza_pct} onChange={(e)=>setF("pureza_pct", e.target.value)} placeholder="98" />
-              <input type="number" className="border rounded px-2 py-2 w-full" value={form.perdas_pct} onChange={(e)=>setF("perdas_pct", e.target.value)} placeholder="5" />
+              <input
+                type="number"
+                className="border rounded px-2 py-2 w-full"
+                value={form.germinacao_pct}
+                onChange={(e) => setF("germinacao_pct", e.target.value)}
+                placeholder="90"
+              />
+              <input
+                type="number"
+                className="border rounded px-2 py-2 w-full"
+                value={form.pureza_pct}
+                onChange={(e) => setF("pureza_pct", e.target.value)}
+                placeholder="98"
+              />
+              <input
+                type="number"
+                className="border rounded px-2 py-2 w-full"
+                value={form.perdas_pct}
+                onChange={(e) => setF("perdas_pct", e.target.value)}
+                placeholder="5"
+              />
             </div>
           </div>
         </div>
@@ -424,7 +484,9 @@ export default function Plantios() {
                   {r.tipo_embalagem === "bigbag" ? "Big bags (estimado)" : "Sacos (estimado)"}
                 </div>
                 <div className="text-lg font-semibold">
-                  {r.embalagensNec ? r.embalagensNec.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}
+                  {r.embalagensNec
+                    ? r.embalagensNec.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                    : "—"}
                 </div>
               </div>
               <div className="p-3 bg-slate-50 rounded">
@@ -438,13 +500,16 @@ export default function Plantios() {
         })()}
 
         <div className="flex justify-end">
-          <button onClick={addPlantio} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded">
+          <button
+            onClick={addPlantio}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded"
+          >
             Salvar plantio
           </button>
         </div>
       </div>
 
-      {/* Tabela */}
+      {/* ===== Tabela ===== */}
       <div className="overflow-x-auto rounded-lg shadow">
         <table className="w-full bg-white">
           <thead className="bg-slate-100">
@@ -498,7 +563,9 @@ export default function Plantios() {
                     <td className="p-2 text-right">
                       {Number(r.area_ha || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </td>
-                    <td className="p-2 text-right">{Number(r.populacao_ha || 0).toLocaleString()}</td>
+                    <td className="p-2 text-right">
+                      {Number(r.populacao_ha || 0).toLocaleString()}
+                    </td>
                     <td className="p-2">
                       {r.tipo_embalagem || "—"}{" "}
                       {r.kg_por_embalagem ? `• ${r.kg_por_embalagem} kg` : ""}
