@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { Loader2, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import TalhoesManager from "./TalhoesManager";
+import FazendaSelect from "./FazendaSelect";
 
-/* ====== Helpers de sementes (os mesmos da versão anterior) ====== */
+/* ====== Helpers de sementes ====== */
 function calcSeedsPerKg(pms_g) {
   const pms = Number(pms_g || 0);
   if (!pms || pms <= 0) return 0;
@@ -52,11 +53,14 @@ export default function Plantios() {
   const [fSafra, setFSafra] = useState("");
   const [fCultura, setFCultura] = useState("");
 
+  // filtro por fazenda (novo)
+  const [fazendaId, setFazendaId] = useState(null);
+
   // dados
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // talhões
+  // talhões (filtrados por fazenda)
   const [talhoes, setTalhoes] = useState([]);
   const [showTalhoes, setShowTalhoes] = useState(false);
 
@@ -65,7 +69,7 @@ export default function Plantios() {
     data_plantio: new Date().toISOString().slice(0, 10),
     cultura: "",
     safra: "",
-    talhao: "",           // agora vem do dropdown (nome)
+    talhao: "",           // nome do talhão (dropdown)
     area_ha: "",
     espacamento: "",
     populacao_ha: "",
@@ -106,10 +110,9 @@ export default function Plantios() {
 
   const fetchTalhoes = async () => {
     try {
-      const { data, error } = await supabase
-        .from("talhoes")
-        .select("*")
-        .order("nome", { ascending: true });
+      let q = supabase.from("talhoes").select("*").order("nome", { ascending: true });
+      if (fazendaId) q = q.eq("fazenda_id", fazendaId);
+      const { data, error } = await q;
       if (error) throw error;
       setTalhoes(data || []);
     } catch (e) {
@@ -120,8 +123,16 @@ export default function Plantios() {
 
   useEffect(() => {
     fetchPlantios();
-    fetchTalhoes();
   }, []);
+
+  useEffect(() => {
+    fetchTalhoes();
+    // ao trocar de fazenda, se o talhão atual não pertence a ela, limpa o campo
+    setForm((s) => {
+      const stillValid = talhoes.some((t) => t.nome === s.talhao && (!fazendaId || t.fazenda_id === Number(fazendaId)));
+      return stillValid ? s : { ...s, talhao: "", area_ha: "" };
+    });
+  }, [fazendaId]);
 
   const addPlantio = async () => {
     try {
@@ -152,10 +163,7 @@ export default function Plantios() {
       const { error } = await supabase.from("plantios").insert([payload]);
       if (error) throw error;
 
-      setForm((s) => ({
-        ...s,
-        obs: "",
-      }));
+      setForm((s) => ({ ...s, obs: "" }));
       fetchPlantios();
     } catch (err) {
       console.error(err);
@@ -185,7 +193,7 @@ export default function Plantios() {
 
   const totalArea = filtered.reduce((s, r) => s + Number(r.area_ha || 0), 0);
 
-  /* ===== lookup: se usuário escolher um talhão, sugere a área_ha do cadastro */
+  // auto-preenche área do talhão escolhido (se o cadastro tiver área)
   useEffect(() => {
     const t = talhoes.find((x) => x.nome === form.talhao);
     if (t && !form.area_ha) {
@@ -197,7 +205,17 @@ export default function Plantios() {
     <div className="space-y-5">
       {/* Filtros + Resumo */}
       <div className="bg-white p-4 rounded-lg shadow space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+          {/* Seletor de Fazenda (novo) */}
+          <div className="md:col-span-2">
+            <label className="text-xs text-slate-600">Fazenda</label>
+            <FazendaSelect
+              value={fazendaId}
+              onChange={(id) => setFazendaId(id ? Number(id) : null)}
+              allowCreate={true}
+            />
+          </div>
+
           <input
             className="border rounded px-3 py-2"
             placeholder="Safra (ex: 2024/25)"
@@ -218,7 +236,7 @@ export default function Plantios() {
             <span className="text-slate-600 text-sm">Registros</span>
             <span className="font-semibold">{filtered.length}</span>
           </div>
-          <div className="p-2 bg-slate-50 rounded flex items-center justify-between">
+          <div className="p-2 bg-slate-50 rounded flex items-center justify-between md:col-span-1">
             <span className="text-slate-600 text-sm">Área total (ha)</span>
             <span className="font-semibold">
               {totalArea.toLocaleString(undefined, { maximumFractionDigits: 2 })}
@@ -238,6 +256,9 @@ export default function Plantios() {
         </button>
         {showTalhoes && (
           <div className="p-4 border-t">
+            {/* O TalhoesManager já tem seu próprio seletor de fazenda.
+                Se quiser forçar usar a mesma fazenda selecionada aqui, podemos
+                depois expor uma prop para controlar isso. */}
             <TalhoesManager onChanged={fetchTalhoes} />
           </div>
         )}
@@ -248,14 +269,26 @@ export default function Plantios() {
         <h3 className="font-semibold text-lg">Novo plantio</h3>
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          <input type="date" className="border rounded px-3 py-2" value={form.data_plantio}
-                 onChange={(e)=>setF("data_plantio", e.target.value)} />
-          <input className="border rounded px-3 py-2" placeholder="Cultura (ex: Soja)"
-                 value={form.cultura} onChange={(e)=>setF("cultura", e.target.value)} />
-          <input className="border rounded px-3 py-2" placeholder="Safra (ex: 2024/25)"
-                 value={form.safra} onChange={(e)=>setF("safra", e.target.value)} />
+          <input
+            type="date"
+            className="border rounded px-3 py-2"
+            value={form.data_plantio}
+            onChange={(e)=>setF("data_plantio", e.target.value)}
+          />
+          <input
+            className="border rounded px-3 py-2"
+            placeholder="Cultura (ex: Soja)"
+            value={form.cultura}
+            onChange={(e)=>setF("cultura", e.target.value)}
+          />
+          <input
+            className="border rounded px-3 py-2"
+            placeholder="Safra (ex: 2024/25)"
+            value={form.safra}
+            onChange={(e)=>setF("safra", e.target.value)}
+          />
 
-          {/* Talhão dropdown */}
+          {/* Talhão dropdown (filtrado por fazenda) */}
           <select
             className="border rounded px-3 py-2"
             value={form.talhao}
@@ -269,20 +302,39 @@ export default function Plantios() {
             ))}
           </select>
 
-          <input className="border rounded px-3 py-2" type="number" placeholder="Área (ha)"
-                 value={form.area_ha} onChange={(e)=>setF("area_ha", e.target.value)} />
+          <input
+            className="border rounded px-3 py-2"
+            type="number"
+            placeholder="Área (ha)"
+            value={form.area_ha}
+            onChange={(e)=>setF("area_ha", e.target.value)}
+          />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <input className="border rounded px-3 py-2" type="number" placeholder="Espaçamento"
-                 value={form.espacamento} onChange={(e)=>setF("espacamento", e.target.value)} />
-          <input className="border rounded px-3 py-2" type="number" placeholder="População (sementes/ha)"
-                 value={form.populacao_ha} onChange={(e)=>setF("populacao_ha", e.target.value)} />
-          <input className="border rounded px-3 py-2" placeholder="Observações"
-                 value={form.obs} onChange={(e)=>setF("obs", e.target.value)} />
+          <input
+            className="border rounded px-3 py-2"
+            type="number"
+            placeholder="Espaçamento"
+            value={form.espacamento}
+            onChange={(e)=>setF("espacamento", e.target.value)}
+          />
+          <input
+            className="border rounded px-3 py-2"
+            type="number"
+            placeholder="População (sementes/ha)"
+            value={form.populacao_ha}
+            onChange={(e)=>setF("populacao_ha", e.target.value)}
+          />
+          <input
+            className="border rounded px-3 py-2"
+            placeholder="Observações"
+            value={form.obs}
+            onChange={(e)=>setF("obs", e.target.value)}
+          />
         </div>
 
-        {/* Embalagem / Qualidade (iguais à versão anterior) */}
+        {/* Embalagem / Qualidade */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           <div>
             <label className="text-xs text-slate-500">Tipo de embalagem</label>
