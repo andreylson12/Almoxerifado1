@@ -1,7 +1,6 @@
-// src/components/Plantios.jsx
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
-import { Loader2, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import TalhoesManager from "./TalhoesManager";
 
 /* ===== Helpers de sementes ===== */
@@ -49,31 +48,31 @@ function calcNecessidades({
 }
 
 export default function Plantios() {
-  /* ===== Estados de filtros/header ===== */
+  /* ===== Filtros ===== */
+  const [fazendas, setFazendas] = useState([]);
+  const [fazenda, setFazenda] = useState(""); // id da fazenda selecionada
   const [fSafra, setFSafra] = useState("");
   const [fCultura, setFCultura] = useState("");
 
-  /* ===== Fazendas & Talhões (filtrados pela fazenda) ===== */
-  const [fazendas, setFazendas] = useState([]);
-  const [fazenda, setFazenda] = useState(""); // id da fazenda selecionada
-  const [talhoes, setTalhoes] = useState([]);
-
-  const [showTalhoes, setShowTalhoes] = useState(false);
-
-  /* ===== Dados de plantios ===== */
-  const [rows, setRows] = useState([]);
+  /* ===== Dados ===== */
+  const [rows, setRows] = useState([]); // plantios (todos)
   const [loading, setLoading] = useState(false);
 
-  /* ===== Form novo plantio ===== */
+  /* ===== Talhões ===== */
+  const [talhoes, setTalhoes] = useState([]); // talhões da fazenda selecionada
+  const [showTalhoes, setShowTalhoes] = useState(false);
+
+  /* ===== Form ===== */
   const [form, setForm] = useState({
     data_plantio: new Date().toISOString().slice(0, 10),
     cultura: "",
     safra: "",
-    talhao: "", // nome do talhão
+    talhao: "",           // nome do talhão (filtrado pela fazenda)
     area_ha: "",
     espacamento: "",
     populacao_ha: "",
     obs: "",
+
     tipo_embalagem: "saco",
     kg_por_embalagem: 20,
     sementes_por_saco: "",
@@ -93,6 +92,8 @@ export default function Plantios() {
         .order("nome", { ascending: true });
       if (error) throw error;
       setFazendas(data || []);
+      // Se nada selecionado, tenta selecionar a primeira
+      if (!fazenda && data && data.length) setFazenda(String(data[0].id));
     } catch (e) {
       console.error(e);
       alert("Falha ao carregar fazendas.");
@@ -101,15 +102,9 @@ export default function Plantios() {
 
   const fetchTalhoes = async (fazendaId) => {
     try {
-      if (!fazendaId) {
-        setTalhoes([]);
-        return;
-      }
-      const { data, error } = await supabase
-        .from("talhoes")
-        .select("*")
-        .eq("fazenda_id", fazendaId) // <- FILTRA PELO ID DA FAZENDA
-        .order("nome", { ascending: true });
+      let q = supabase.from("talhoes").select("*").order("nome", { ascending: true });
+      if (fazendaId) q = q.eq("fazenda_id", fazendaId);
+      const { data, error } = await q;
       if (error) throw error;
       setTalhoes(data || []);
     } catch (e) {
@@ -141,37 +136,33 @@ export default function Plantios() {
     }
   };
 
-  /* ===== Efeitos ===== */
   useEffect(() => {
     fetchFazendas();
-    fetchPlantios();
   }, []);
 
+  // Carrega talhões ao trocar de fazenda
   useEffect(() => {
-    fetchTalhoes(fazenda);
-    // zera seleção de talhão e área quando troca de fazenda
-    setF("talhao", "");
-    setF("area_ha", "");
+    if (fazenda) fetchTalhoes(fazenda);
   }, [fazenda]);
 
-  /* Preenche área quando escolhe talhão */
+  // Busca plantios ao abrir e quando filtros mudam
   useEffect(() => {
-    const t = talhoes.find((x) => x.nome === form.talhao);
-    if (t) setF("area_ha", t.area_ha ?? "");
-  }, [form.talhao, talhoes]);
+    fetchPlantios();
+  }, [fSafra, fCultura]);
 
-  /* ===== Inserção / remoção ===== */
+  /* ===== Novo Plantio ===== */
   const addPlantio = async () => {
     try {
       const payload = {
         data_plantio: form.data_plantio || null,
         cultura: form.cultura || null,
         safra: form.safra || null,
-        talhao: form.talhao || null, // salva o NOME do talhão (relacionado indiretamente pela fazenda escolhida)
+        talhao: form.talhao || null, // nome do talhão
         area_ha: form.area_ha ? Number(form.area_ha) : null,
         espacamento: form.espacamento ? Number(form.espacamento) : null,
         populacao_ha: form.populacao_ha ? Number(form.populacao_ha) : null,
         obs: form.obs || null,
+
         tipo_embalagem: form.tipo_embalagem || null,
         kg_por_embalagem: form.kg_por_embalagem ? Number(form.kg_por_embalagem) : null,
         sementes_por_saco: form.sementes_por_saco ? Number(form.sementes_por_saco) : null,
@@ -183,7 +174,7 @@ export default function Plantios() {
 
       if (!fazenda) return alert("Selecione a fazenda.");
       if (!payload.cultura) return alert("Informe a cultura.");
-      if (!payload.talhao) return alert("Selecione um talhão.");
+      if (!payload.talhao) return alert("Selecione o talhão.");
       if (!payload.area_ha) return alert("Informe a área (ha).");
       if (!payload.populacao_ha) return alert("Informe a população (sementes/ha).");
 
@@ -210,32 +201,43 @@ export default function Plantios() {
     }
   };
 
-  /* ===== Filtrados / Totais ===== */
+  /* ===== Filtro por fazenda (via nomes dos talhões) ===== */
+  const talhoesNomesDaFazenda = useMemo(() => new Set(talhoes.map((t) => t.nome)), [talhoes]);
+
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       if (fSafra && !(r.safra || "").toLowerCase().includes(fSafra.toLowerCase())) return false;
       if (fCultura && !(r.cultura || "").toLowerCase().includes(fCultura.toLowerCase())) return false;
+      // Se houver fazenda selecionada, só lista plantios cujo talhão existe nessa fazenda
+      if (fazenda && talhoesNomesDaFazenda.size > 0) {
+        if (!talhoesNomesDaFazenda.has(r.talhao || "")) return false;
+      }
       return true;
     });
-  }, [rows, fSafra, fCultura]);
+  }, [rows, fSafra, fCultura, fazenda, talhoesNomesDaFazenda]);
 
   const totalArea = filtered.reduce((s, r) => s + Number(r.area_ha || 0), 0);
 
-  /* ===== UI ===== */
+  /* Prefill de área ao trocar talhão */
+  useEffect(() => {
+    const t = talhoes.find((x) => x.nome === form.talhao);
+    if (t) setF("area_ha", t.area_ha ?? "");
+  }, [form.talhao, talhoes]);
+
   return (
     <div className="space-y-5">
-      {/* Filtros & Header */}
+      {/* ===== Topo: filtros ===== */}
       <div className="bg-white p-4 rounded-lg shadow space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          {/* Fazenda */}
-          <div className="col-span-2">
+        <div className="grid grid-cols-1 md:grid-cols-7 gap-3 items-end">
+          {/* Fazendas */}
+          <div className="md:col-span-2">
             <label className="text-xs text-slate-500">Fazenda</label>
             <select
               className="border rounded px-3 py-2 w-full"
               value={fazenda}
               onChange={(e) => setFazenda(e.target.value)}
             >
-              <option value="">Selecione a fazenda…</option>
+              {fazendas.length === 0 && <option value="">Nenhuma fazenda</option>}
               {fazendas.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.nome}
@@ -264,31 +266,29 @@ export default function Plantios() {
             />
           </div>
 
-          <div className="flex items-end">
+          <div className="flex md:col-span-1">
             <button
               onClick={fetchPlantios}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded w-full"
             >
               Atualizar
             </button>
           </div>
 
           <div className="p-2 bg-slate-50 rounded flex items-center justify-between">
-            <div>
-              <div className="text-slate-600 text-xs">Registros</div>
-              <div className="font-semibold leading-5">{filtered.length}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-slate-600 text-xs">Área total (ha)</div>
-              <div className="font-semibold">
-                {totalArea.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              </div>
-            </div>
+            <span className="text-slate-600 text-sm">Registros</span>
+            <span className="font-semibold">{filtered.length}</span>
+          </div>
+          <div className="p-2 bg-slate-50 rounded flex items-center justify-between">
+            <span className="text-slate-600 text-sm">Área total (ha)</span>
+            <span className="font-semibold">
+              {totalArea.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Gerenciar Talhões */}
+      {/* ===== Gerenciar Talhões ===== */}
       <div className="bg-white rounded-lg shadow">
         <button
           className="w-full flex items-center justify-between px-4 py-3"
@@ -299,110 +299,83 @@ export default function Plantios() {
         </button>
         {showTalhoes && (
           <div className="p-4 border-t">
-            {/* Ao salvar/excluir talhões, recarrega talhões da fazenda atual */}
-            <TalhoesManager onChanged={() => fetchTalhoes(fazenda)} />
+            <TalhoesManager currentFazendaId={fazenda} onChanged={() => fetchTalhoes(fazenda)} />
           </div>
         )}
       </div>
 
-      {/* Formulário de Plantio */}
+      {/* ===== Formulário de novo plantio ===== */}
       <div className="bg-white p-4 rounded-lg shadow space-y-4">
         <h3 className="font-semibold text-lg">Novo plantio</h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <div>
-            <label className="text-xs text-slate-500">Data</label>
-            <input
-              type="date"
-              className="border rounded px-3 py-2 w-full"
-              value={form.data_plantio}
-              onChange={(e) => setF("data_plantio", e.target.value)}
-            />
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <input
+            type="date"
+            className="border rounded px-3 py-2"
+            value={form.data_plantio}
+            onChange={(e) => setF("data_plantio", e.target.value)}
+          />
+          <input
+            className="border rounded px-3 py-2"
+            placeholder="Cultura (ex: Soja)"
+            value={form.cultura}
+            onChange={(e) => setF("cultura", e.target.value)}
+          />
+          <input
+            className="border rounded px-3 py-2"
+            placeholder="Safra (ex: 2024/25)"
+            value={form.safra}
+            onChange={(e) => setF("safra", e.target.value)}
+          />
 
-          <div>
-            <label className="text-xs text-slate-500">Cultura</label>
-            <input
-              className="border rounded px-3 py-2 w-full"
-              placeholder="ex: Soja"
-              value={form.cultura}
-              onChange={(e) => setF("cultura", e.target.value)}
-            />
-          </div>
+          {/* Talhão (somente os da fazenda) */}
+          <select
+            className="border rounded px-3 py-2"
+            value={form.talhao}
+            onChange={(e) => setF("talhao", e.target.value)}
+          >
+            <option value="">Selecione o talhão…</option>
+            {talhoes.map((t) => (
+              <option key={t.id} value={t.nome}>
+                {t.nome}{t.area_ha ? ` • ${t.area_ha} ha` : ""}
+              </option>
+            ))}
+          </select>
 
-          <div>
-            <label className="text-xs text-slate-500">Safra</label>
-            <input
-              className="border rounded px-3 py-2 w-full"
-              placeholder="ex: 2024/25"
-              value={form.safra}
-              onChange={(e) => setF("safra", e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="text-xs text-slate-500">Talhão</label>
-            <select
-              className="border rounded px-3 py-2 w-full"
-              value={form.talhao}
-              onChange={(e) => setF("talhao", e.target.value)}
-              disabled={!fazenda}
-              title={!fazenda ? "Selecione a fazenda primeiro" : ""}
-            >
-              <option value="">{fazenda ? "Selecione o talhão…" : "Selecione a fazenda…"}</option>
-              {talhoes.map((t) => (
-                <option key={t.id} value={t.nome}>
-                  {t.nome} {t.area_ha ? `• ${t.area_ha} ha` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="text-xs text-slate-500">Área (ha)</label>
-            <input
-              className="border rounded px-3 py-2 w-full"
-              type="number"
-              placeholder="Área (ha)"
-              value={form.area_ha}
-              onChange={(e) => setF("area_ha", e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="text-xs text-slate-500">Observações</label>
-            <input
-              className="border rounded px-3 py-2 w-full"
-              placeholder="Observações"
-              value={form.obs}
-              onChange={(e) => setF("obs", e.target.value)}
-            />
-          </div>
+          <input
+            className="border rounded px-3 py-2"
+            type="number"
+            placeholder="Área (ha)"
+            value={form.area_ha}
+            onChange={(e) => setF("area_ha", e.target.value)}
+          />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div>
-            <label className="text-xs text-slate-500">Espaçamento</label>
-            <input
-              className="border rounded px-3 py-2 w-full"
-              type="number"
-              placeholder="Espaçamento"
-              value={form.espacamento}
-              onChange={(e) => setF("espacamento", e.target.value)}
-            />
-          </div>
+          <input
+            className="border rounded px-3 py-2"
+            type="number"
+            placeholder="Espaçamento"
+            value={form.espacamento}
+            onChange={(e) => setF("espacamento", e.target.value)}
+          />
+          <input
+            className="border rounded px-3 py-2"
+            type="number"
+            placeholder="População (sementes/ha)"
+            value={form.populacao_ha}
+            onChange={(e) => setF("populacao_ha", e.target.value)}
+          />
+          <input
+            className="border rounded px-3 py-2"
+            placeholder="Observações"
+            value={form.obs}
+            onChange={(e) => setF("obs", e.target.value)}
+          />
+        </div>
 
-          <div>
-            <label className="text-xs text-slate-500">População (sementes/ha)</label>
-            <input
-              className="border rounded px-3 py-2 w-full"
-              type="number"
-              placeholder="ex: 300000"
-              value={form.populacao_ha}
-              onChange={(e) => setF("populacao_ha", e.target.value)}
-            />
-          </div>
-
+        {/* Embalagem / Qualidade */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           <div>
             <label className="text-xs text-slate-500">Tipo de embalagem</label>
             <select
@@ -414,9 +387,7 @@ export default function Plantios() {
               <option value="bigbag">Big bag</option>
             </select>
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           <div>
             <label className="text-xs text-slate-500">Peso da embalagem (kg)</label>
             <input
@@ -476,8 +447,6 @@ export default function Plantios() {
               />
             </div>
           </div>
-
-          <div className="hidden md:block" />
         </div>
 
         {/* Resumo em tempo real */}
@@ -536,7 +505,7 @@ export default function Plantios() {
         </div>
       </div>
 
-      {/* Tabela */}
+      {/* ===== Tabela ===== */}
       <div className="overflow-x-auto rounded-lg shadow">
         <table className="w-full bg-white">
           <thead className="bg-slate-100">
