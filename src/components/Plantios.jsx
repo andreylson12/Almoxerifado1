@@ -55,7 +55,7 @@ export default function Plantios() {
   const [fCultura, setFCultura] = useState("");
 
   /* ===== Dados ===== */
-  const [rows, setRows] = useState([]); // plantios (todos)
+  const [rows, setRows] = useState([]); // plantios
   const [loading, setLoading] = useState(false);
 
   /* ===== Talhões ===== */
@@ -92,7 +92,6 @@ export default function Plantios() {
         .order("nome", { ascending: true });
       if (error) throw error;
       setFazendas(data || []);
-      // Se nada selecionado, tenta selecionar a primeira
       if (!fazenda && data && data.length) setFazenda(String(data[0].id));
     } catch (e) {
       console.error(e);
@@ -122,6 +121,7 @@ export default function Plantios() {
         .order("data_plantio", { ascending: false })
         .order("id", { ascending: false });
 
+      if (fazenda) q = q.eq("fazenda_id", Number(fazenda));
       if (fSafra) q = q.ilike("safra", `%${fSafra}%`);
       if (fCultura) q = q.ilike("cultura", `%${fCultura}%`);
 
@@ -142,10 +142,13 @@ export default function Plantios() {
 
   // Carrega talhões ao trocar de fazenda
   useEffect(() => {
-    if (fazenda) fetchTalhoes(fazenda);
+    if (fazenda) {
+      fetchTalhoes(fazenda);
+      fetchPlantios(); // também refaz a listagem por fazenda
+    }
   }, [fazenda]);
 
-  // Busca plantios ao abrir e quando filtros mudam
+  // Rebusca quando filtros de texto mudarem
   useEffect(() => {
     fetchPlantios();
   }, [fSafra, fCultura]);
@@ -154,6 +157,7 @@ export default function Plantios() {
   const addPlantio = async () => {
     try {
       const payload = {
+        fazenda_id: fazenda ? Number(fazenda) : null,  // <<< SALVANDO A FAZENDA AQUI
         data_plantio: form.data_plantio || null,
         cultura: form.cultura || null,
         safra: form.safra || null,
@@ -172,7 +176,7 @@ export default function Plantios() {
         perdas_pct: form.perdas_pct ? Number(form.perdas_pct) : null,
       };
 
-      if (!fazenda) return alert("Selecione a fazenda.");
+      if (!payload.fazenda_id) return alert("Selecione a fazenda.");
       if (!payload.cultura) return alert("Informe a cultura.");
       if (!payload.talhao) return alert("Selecione o talhão.");
       if (!payload.area_ha) return alert("Informe a área (ha).");
@@ -201,21 +205,13 @@ export default function Plantios() {
     }
   };
 
-  /* ===== Filtro por fazenda (via nomes dos talhões) ===== */
-  const talhoesNomesDaFazenda = useMemo(() => new Set(talhoes.map((t) => t.nome)), [talhoes]);
+  /* ===== Derivados ===== */
+  const fazendaNomeById = useMemo(() => {
+    const map = new Map(fazendas.map((f) => [String(f.id), f.nome]));
+    return (id) => map.get(String(id)) || "—";
+  }, [fazendas]);
 
-  const filtered = useMemo(() => {
-    return rows.filter((r) => {
-      if (fSafra && !(r.safra || "").toLowerCase().includes(fSafra.toLowerCase())) return false;
-      if (fCultura && !(r.cultura || "").toLowerCase().includes(fCultura.toLowerCase())) return false;
-      // Se houver fazenda selecionada, só lista plantios cujo talhão existe nessa fazenda
-      if (fazenda && talhoesNomesDaFazenda.size > 0) {
-        if (!talhoesNomesDaFazenda.has(r.talhao || "")) return false;
-      }
-      return true;
-    });
-  }, [rows, fSafra, fCultura, fazenda, talhoesNomesDaFazenda]);
-
+  const filtered = rows; // já vem filtrado por fazenda/safra/cultura no fetch
   const totalArea = filtered.reduce((s, r) => s + Number(r.area_ha || 0), 0);
 
   /* Prefill de área ao trocar talhão */
@@ -424,27 +420,9 @@ export default function Plantios() {
           <div>
             <label className="text-xs text-slate-500">Germinação / Pureza / Perdas (%)</label>
             <div className="grid grid-cols-3 gap-2">
-              <input
-                type="number"
-                className="border rounded px-2 py-2 w-full"
-                value={form.germinacao_pct}
-                onChange={(e) => setF("germinacao_pct", e.target.value)}
-                placeholder="90"
-              />
-              <input
-                type="number"
-                className="border rounded px-2 py-2 w-full"
-                value={form.pureza_pct}
-                onChange={(e) => setF("pureza_pct", e.target.value)}
-                placeholder="98"
-              />
-              <input
-                type="number"
-                className="border rounded px-2 py-2 w-full"
-                value={form.perdas_pct}
-                onChange={(e) => setF("perdas_pct", e.target.value)}
-                placeholder="5"
-              />
+              <input type="number" className="border rounded px-2 py-2 w-full" value={form.germinacao_pct} onChange={(e)=>setF("germinacao_pct", e.target.value)} placeholder="90" />
+              <input type="number" className="border rounded px-2 py-2 w-full" value={form.pureza_pct} onChange={(e)=>setF("pureza_pct", e.target.value)} placeholder="98" />
+              <input type="number" className="border rounded px-2 py-2 w-full" value={form.perdas_pct} onChange={(e)=>setF("perdas_pct", e.target.value)} placeholder="5" />
             </div>
           </div>
         </div>
@@ -496,10 +474,7 @@ export default function Plantios() {
         })()}
 
         <div className="flex justify-end">
-          <button
-            onClick={addPlantio}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded"
-          >
+          <button onClick={addPlantio} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded">
             Salvar plantio
           </button>
         </div>
@@ -513,6 +488,7 @@ export default function Plantios() {
               <th className="p-2 text-left">Data</th>
               <th className="p-2 text-left">Safra</th>
               <th className="p-2 text-left">Cultura</th>
+              <th className="p-2 text-left">Fazenda</th> {/* NOVA COLUNA */}
               <th className="p-2 text-left">Talhão</th>
               <th className="p-2 text-right">Área (ha)</th>
               <th className="p-2 text-right">População</th>
@@ -525,7 +501,7 @@ export default function Plantios() {
           <tbody>
             {loading ? (
               <tr>
-                <td className="p-4 text-center" colSpan={10}>
+                <td className="p-4 text-center" colSpan={11}>
                   <span className="inline-flex items-center gap-2 text-slate-600">
                     <Loader2 className="h-4 w-4 animate-spin" /> Carregando…
                   </span>
@@ -533,7 +509,7 @@ export default function Plantios() {
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td className="p-4 text-center text-slate-500" colSpan={10}>
+                <td className="p-4 text-center text-slate-500" colSpan={11}>
                   Nenhum plantio.
                 </td>
               </tr>
@@ -555,6 +531,7 @@ export default function Plantios() {
                     <td className="p-2">{r.data_plantio || "—"}</td>
                     <td className="p-2">{r.safra || "—"}</td>
                     <td className="p-2">{r.cultura || "—"}</td>
+                    <td className="p-2">{fazendaNomeById(r.fazenda_id)}</td>
                     <td className="p-2">{r.talhao || "—"}</td>
                     <td className="p-2 text-right">
                       {Number(r.area_ha || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
